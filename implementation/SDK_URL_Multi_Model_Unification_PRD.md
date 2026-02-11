@@ -3,7 +3,8 @@
 **Date:** 2026-02-11  
 **Status:** Draft for review  
 **Owner:** unified-agent  
-**Scope:** Add `--sdk-url`-class remote cognition to `unified-agent` so one orchestration plane can drive Claude, Codex, and Gemini bodies with consistent policy, telemetry, and replay.
+**Scope:** Add `--sdk-url`-class remote cognition to `unified-agent` so one orchestration plane can drive Claude, Codex, and Gemini bodies with consistent policy, telemetry, and replay.  
+**Naming note:** Product name is `unified-agent`. Current implementation files still live under the existing workspace path `/Volumes/VRAM/00-09_System/01_Tools/pai-unified-terminal/` until the repo path rename lands.
 
 ## 0. Direct Answer to the Core Question
 
@@ -187,9 +188,12 @@ flowchart LR
 export type UcpEnvelope =
   | UcpControlRequest
   | UcpControlResponse
+  | UcpControlCancelRequest
   | UcpUserMessage
   | UcpAssistantEvent
+  | UcpSystemEvent
   | UcpKeepAlive
+  | UcpEnvUpdate
   | UcpError;
 
 export interface UcpControlRequest {
@@ -197,10 +201,17 @@ export interface UcpControlRequest {
   request_id: string;
   request:
     | { subtype: "initialize"; provider: "claude" | "codex" | "gemini"; model?: string }
+    | { subtype: "can_use_tool"; tool_name: string; input: Record<string, unknown>; permission_suggestions?: unknown[]; tool_use_id: string; description?: string; agent_id?: string }
     | { subtype: "set_model"; model: string | "default" }
     | { subtype: "set_permission_mode"; mode: "default" | "acceptEdits" | "plan" | "bypassPermissions" }
     | { subtype: "set_max_thinking_tokens"; max_thinking_tokens: number | null }
     | { subtype: "mcp_status" }
+    | { subtype: "mcp_message"; server_name: string; message: unknown }
+    | { subtype: "mcp_set_servers"; servers: Record<string, unknown> }
+    | { subtype: "mcp_reconnect"; serverName: string }
+    | { subtype: "mcp_toggle"; serverName: string; enabled: boolean }
+    | { subtype: "rewind_files"; user_message_id: string; dry_run?: boolean }
+    | { subtype: "hook_callback"; callback_id: string; input: unknown; tool_use_id?: string }
     | { subtype: "interrupt" };
 }
 
@@ -211,10 +222,26 @@ export interface UcpControlResponse {
     | { subtype: "error"; request_id: string; error: string };
 }
 
+export interface UcpControlCancelRequest {
+  type: "control_cancel_request";
+  request_id: string;
+}
+
 export interface UcpUserMessage {
   type: "user";
   session_id: string;
   message: { role: "user"; content: string };
+}
+
+export interface UcpSystemEvent {
+  type: "system";
+  subtype: "init" | "status";
+  session_id: string;
+}
+
+export interface UcpEnvUpdate {
+  type: "update_environment_variables";
+  variables: Record<string, string>;
 }
 ```
 
@@ -257,23 +284,56 @@ stateDiagram-v2
 
 ### 6.2 Control-plane
 
-1. Support `initialize`, `set_model`, `set_permission_mode`, `set_max_thinking_tokens`, `interrupt`.
-2. Return deterministic `control_response` for every `control_request`.
-3. Emit normalized assistant/tool lifecycle events across providers.
-4. Emit explicit compatibility warnings when a provider cannot honor a control subtype.
+1. Support full Claude-side control subtype surface in gateway protocol contracts: `initialize`, `can_use_tool`, `interrupt`, `set_permission_mode`, `set_model`, `set_max_thinking_tokens`, `mcp_status`, `mcp_message`, `mcp_reconnect`, `mcp_toggle`, `mcp_set_servers`, `rewind_files`, `hook_callback`.
+2. Support `control_cancel_request` semantics for cancelable in-flight requests.
+3. Return deterministic `control_response` for every `control_request`, including structured `error` responses with correlation IDs.
+4. Enforce request/response correlation by `request_id` and persist correlation state.
+5. Emit normalized assistant/tool lifecycle events across providers, including `stream_event`, `tool_progress`, `tool_use_summary`, and provider-auth status surfaces.
+6. Emit explicit compatibility warnings when a provider cannot honor a control subtype.
+7. Add explicit adapter capability declarations so unsupported subtypes fail predictably, not silently.
 
 ### 6.3 Persistence
 
 1. Persist each control request/response in SQLite and JSONL.
 2. Persist transport metadata per session.
 3. Persist adapter-level errors with stable error codes.
-4. Preserve existing session list/new/resume behavior.
+4. Persist pending permission requests and queued outbound messages so disconnect/restart does not lose approval state.
+5. Preserve existing session list/new/resume behavior.
+6. Persist both gateway session ID and provider-native session/thread ID for relaunch-resume correctness.
 
 ### 6.4 Policy
 
 1. Centralize permission mode policy in gateway.
 2. Default to deny for unsupported or ambiguous control requests.
 3. Add allowlist for dangerous provider flags in one file.
+4. Implement canonical `can_use_tool` decision schema with strict validation for `behavior`, `updatedInput`, and optional `updatedPermissions`.
+
+### 6.5 Lifecycle Hardening
+
+1. Maintain outbound pre-connect queue and guaranteed flush-on-connect semantics.
+2. Rehydrate late-joining clients with session snapshot + message history + pending permission prompts.
+3. Emit `cli_connected` and `cli_disconnected` state transitions as first-class events.
+4. On transport close, cancel pending permission requests and emit explicit cancellation events.
+5. Add reconnect watchdog: grace period, stale detection, forced relaunch for sessions that fail to reattach.
+6. Add resume fallback: if provider-native resume fails quickly, clear stale provider session ID and cold-start safely.
+
+```mermaid
+sequenceDiagram
+    participant Brain as Remote Brain
+    participant GW as unified-agent Gateway
+    participant Body as Provider Body
+
+    Brain->>GW: user/control message while Body offline
+    GW->>GW: enqueue outbound message
+    GW-->>Brain: ack queued state
+    Body->>GW: reconnect
+    GW->>Body: flush queued messages in order
+    GW->>Brain: replay snapshot + message history + pending permissions
+    Body--xGW: disconnect during permission flow
+    GW->>Brain: permission_cancelled + cli_disconnected
+    GW->>GW: watchdog timer starts
+    GW->>Body: relaunch and resume with providerSessionId
+```
 
 ## 7. Non-Functional Requirements
 
@@ -390,6 +450,9 @@ Each line is intentionally atomic. No grouped implementation items.
 - [ ] Add `src/gateway/heartbeat.ts` for keepalive and timeout handling.
 - [ ] Add `src/gateway/policy.ts` for permission mode checks.
 - [ ] Add `src/gateway/compat.ts` for unsupported subtype responses.
+- [ ] Add `src/gateway/outboundQueue.ts` for pre-connect message buffering and flush-on-connect behavior.
+- [ ] Add `src/gateway/pendingPermissions.ts` for pending approval tracking and disconnect cancellation.
+- [ ] Add `src/gateway/hydration.ts` for snapshot + message history + pending permission replay to reconnecting clients.
 - [ ] Add `src/adapters/base.ts` with shared adapter interface.
 - [ ] Add `src/adapters/claudeNative.ts` for native `--sdk-url` strategy.
 - [ ] Add `src/adapters/codexCompat.ts` for emulated remote-body codex strategy.
@@ -406,13 +469,29 @@ Each line is intentionally atomic. No grouped implementation items.
 - [ ] Add `control_request set_max_thinking_tokens` handler in gateway router.
 - [ ] Add `control_request interrupt` handler in gateway router.
 - [ ] Add `control_request mcp_status` compatibility handler.
+- [ ] Add `control_request can_use_tool` handler with strict schema validation for `behavior`, `updatedInput`, and optional `updatedPermissions`.
+- [ ] Add `control_request mcp_message` handler.
+- [ ] Add `control_request mcp_set_servers` handler.
+- [ ] Add `control_request mcp_reconnect` handler.
+- [ ] Add `control_request mcp_toggle` handler.
+- [ ] Add `control_request rewind_files` handler.
+- [ ] Add `control_request hook_callback` handler.
+- [ ] Add `control_cancel_request` handler and state transitions for cancellation-aware operations.
 - [ ] Add default error response for unknown subtype.
 - [ ] Add deterministic request-id correlation store.
 - [ ] Add timeout handling per request subtype.
+- [ ] Add retry/backoff strategy for reconnecting brains with bounded jitter and maximum retry window.
+- [ ] Add watchdog timer that relaunches stale sessions if reattach does not occur within grace period.
+- [ ] Add `providerSessionId` field to persist provider-native session/thread IDs.
+- [ ] Add provider resume logic that uses `providerSessionId` on relaunch.
+- [ ] Add fallback logic to clear stale `providerSessionId` when resume fails immediately and cold-start a new provider session.
+- [ ] Add connection lifecycle events `cli_connected` and `cli_disconnected` to canonical event model.
+- [ ] Add canonical event for `permission_cancelled` on backend disconnect with pending requests.
 - [ ] Add unified event normalizer for Claude event shapes.
 - [ ] Add unified event normalizer for Codex event shapes.
 - [ ] Add unified event normalizer for Gemini event shapes.
 - [ ] Add conformance tests for each normalizer.
+- [ ] Add normalizer coverage for `auth_status`, `tool_progress`, `tool_use_summary`, `stream_event`, and `update_environment_variables`.
 - [ ] Add explicit mapping table in code comments for adapter differences.
 - [ ] Add secure URL policy: reject non-wss unless explicit override.
 - [ ] Add URL allowlist config key in local config file.
@@ -434,31 +513,49 @@ Each line is intentionally atomic. No grouped implementation items.
 - [ ] Add adapter smoke script for Claude native route.
 - [ ] Add adapter smoke script for Codex compatibility route.
 - [ ] Add adapter smoke script for Gemini compatibility route.
+- [ ] Add smoke test that verifies queued outbound messages are flushed after delayed backend connect.
+- [ ] Add smoke test that verifies pending permission requests are cancelled and replayed correctly across disconnect/reconnect.
+- [ ] Add smoke test that verifies resume uses provider-native session/thread ID and fallback cold-start path.
 - [ ] Add unit tests for CLI arg parsing of brain flags.
 - [ ] Add unit tests for command parser brain commands.
 - [ ] Add unit tests for protocol validator.
 - [ ] Add unit tests for policy engine.
 - [ ] Add unit tests for sqlite migrations.
 - [ ] Add unit tests for canonical event persistence.
+- [ ] Add unit tests for `control_cancel_request` and cancellation state transitions.
+- [ ] Add unit tests for `can_use_tool` response schema and deny/allow branching.
+- [ ] Add unit tests for outbound queue flush sequencing and duplicate-send prevention.
+- [ ] Add unit tests for pending-permission rehydration from persisted state.
 - [ ] Add integration tests for initialize -> user -> response lifecycle.
 - [ ] Add integration tests for set_model behavior per provider.
 - [ ] Add integration tests for interrupt behavior per provider.
 - [ ] Add integration tests for reconnect and replay.
 - [ ] Add integration tests for unsupported subtype fallback behavior.
+- [ ] Add integration tests for full control subtype matrix (including `mcp_*`, `rewind_files`, `hook_callback`).
+- [ ] Add integration tests for late-join hydration (snapshot + history + pending permissions).
+- [ ] Add integration tests for relaunch watchdog and stale-session recovery.
 - [ ] Add end-to-end test: one remote brain drives Claude body.
 - [ ] Add end-to-end test: one remote brain drives Codex body.
 - [ ] Add end-to-end test: one remote brain drives Gemini body.
 - [ ] Add end-to-end test: provider switch mid-session.
 - [ ] Add end-to-end test: permission mode changed mid-session.
+- [ ] Add end-to-end test: approval requested during disconnect and recovered after reconnect.
+- [ ] Add end-to-end test: Codex thread resume followed by successful turn continuation.
 - [ ] Add documentation section in README for remote brain mode.
 - [ ] Add troubleshooting section for brain connection failures.
 - [ ] Add troubleshooting section for provider incompatibility warnings.
 - [ ] Add troubleshooting section for replay divergence.
+- [ ] Add documentation section for adapter capability matrix and unsupported control subtype behavior.
+- [ ] Add documentation section for queueing, hydration, and pending-permission lifecycle.
 - [ ] Add rollback switch to disable brain mode at startup.
 - [ ] Add canary rollout toggle in config/env.
 - [ ] Add fallback path that returns to current local delegated mode.
 - [ ] Add migration script for existing sessions to include remote metadata defaults.
 - [ ] Add changelog entry describing protocol and migration impacts.
+- [ ] Add REST endpoints for backend availability and model inventory.
+- [ ] Add optional phase-gated REST endpoints for environment profile CRUD and per-session env injection.
+- [ ] Add optional phase-gated worktree/session topology support and cleanup policies.
+- [ ] Add optional phase-gated provider usage/rate-limit summary endpoints.
 
 ## 11. Verification Plan
 
@@ -569,7 +666,39 @@ During review of `/Volumes/VRAM/80-89_Resources/80_Reference/research/ClaudeCode
 
 This PRD therefore uses `cli.js` behavioral evidence as source of truth and treats speculative research content as hypotheses.
 
-## 15. Requested Feedback Before Build
+## 15. Companion Delta Addendum
+
+The `companion` implementation contributes concrete operational patterns that should be treated as implementation requirements for `unified-agent`, not optional polish.
+
+Companion evidence baseline:
+
+1. Protocol parity and control-subtype completeness: `WEBSOCKET_PROTOCOL_REVERSED.md`.
+2. Queueing, pending-permission lifecycle, connection state transitions, replay hydration: `web/server/ws-bridge.ts`.
+3. Relaunch/resume with provider-native session ID handoff: `web/server/cli-launcher.ts`.
+4. Codex adapter capability boundaries and JSON-RPC lifecycle: `web/server/codex-adapter.ts` and `web/CODEX_MAPPING.md`.
+5. Crash recovery and reconnect watchdog behavior: `web/server/index.ts`.
+
+Companion-derived requirements now incorporated:
+
+1. Full control subtype schema coverage, not partial.
+2. Request cancellation semantics (`control_cancel_request`).
+3. Outbound message queueing before backend connect and deterministic flush after connect.
+4. Persisted pending permissions and queued messages across restart.
+5. Late-join hydration with state + history + pending permission prompts.
+6. Disconnection cancellation semantics for pending approvals.
+7. Dual ID strategy: gateway session ID plus provider-native session/thread ID.
+8. Relaunch watchdog with grace window and forced reattach attempt.
+9. Explicit adapter capability matrices and degrade rules.
+10. Codex-specific lifecycle paths (`initialize`, `initialized`, `thread/start`, `thread/resume`, `turn/start`, `turn/interrupt`).
+
+Remaining optional parity candidates (phase-gated):
+
+1. Backend discovery endpoints and dynamic model inventory endpoints.
+2. Environment profile CRUD and per-session env injection.
+3. Worktree orchestration and branch-aware session topology.
+4. Provider usage/rate-limit endpoints in unified observability surface.
+
+## 16. Requested Feedback Before Build
 
 Please confirm these decision points before coding:
 
