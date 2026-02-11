@@ -17,8 +17,8 @@ function boolEnv(name: string, fallback = false): boolean {
 
 async function main(): Promise<void> {
   const projectCwd = process.cwd();
-  const dataDir = await mkdtemp(join(tmpdir(), "pai-ut-data-"));
-  process.env.PAI_UT_DATA_DIR = dataDir;
+  const dataDir = await mkdtemp(join(tmpdir(), "unified-agent-data-"));
+  process.env.UNIFIED_AGENT_DATA_DIR = dataDir;
 
   const sm = new SessionManager();
   const s = await sm.newSession({ project: "smoke", cwd: projectCwd, provider: "mock" });
@@ -39,11 +39,11 @@ async function main(): Promise<void> {
   const mem = new ClaudeMemClient();
   const memHealth = await mem.health();
 
-  const providersEnabled = boolEnv("PAI_UT_SMOKE_PROVIDERS", false);
+  const providersEnabled = boolEnv("UNIFIED_AGENT_SMOKE_PROVIDERS", false);
   const providerResults: Record<string, string> = {};
 
   if (providersEnabled) {
-    const prompt = "Output exactly: PAI_UT_SMOKE_OK";
+    const prompt = "Output exactly: UNIFIED_AGENT_SMOKE_OK";
     const providers = ["claude", "gemini", "codex"] as const;
     for (const p of providers) {
       try {
@@ -79,4 +79,3 @@ main().catch((e) => {
   console.error(e instanceof Error ? e.message : String(e));
   process.exit(1);
 });
-

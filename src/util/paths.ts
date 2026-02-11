@@ -2,7 +2,7 @@ import { homedir } from "node:os";
 import { join } from "node:path";
 
 export function getDataDir(): string {
-  return process.env.PAI_UT_DATA_DIR || join(homedir(), ".pai-unified-terminal");
+  return process.env.UNIFIED_AGENT_DATA_DIR || join(homedir(), ".unified-agent");
 }
 
 export function getSessionsDir(): string {
@@ -12,4 +12,3 @@ export function getSessionsDir(): string {
 export function getSqlitePath(): string {
   return join(getDataDir(), "sessions.db");
 }
-

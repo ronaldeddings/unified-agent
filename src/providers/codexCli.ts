@@ -9,7 +9,7 @@ export class CodexCliProvider implements Provider {
   name = "codex" as const;
 
   async ask(prompt: string, opts: { cwd: string; model?: string }): Promise<ProviderResponse> {
-    const tmp = await mkdtemp(join(tmpdir(), "pai-ut-"));
+    const tmp = await mkdtemp(join(tmpdir(), "unified-agent-"));
     const outPath = join(tmp, "last.txt");
 
     const args = buildCodexArgs(outPath, prompt, opts.model);

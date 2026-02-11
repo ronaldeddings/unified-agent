@@ -8,7 +8,7 @@ export class GeminiCliProvider implements Provider {
   name = "gemini" as const;
 
   async ask(prompt: string, opts: { cwd: string; model?: string }): Promise<ProviderResponse> {
-    const models = buildGeminiModelCandidates(opts.model, process.env.PAI_UT_GEMINI_MODELS);
+    const models = buildGeminiModelCandidates(opts.model, process.env.UNIFIED_AGENT_GEMINI_MODELS);
     let lastError = "";
 
     for (let i = 0; i < models.length; i += 1) {
@@ -267,7 +267,7 @@ function extractAssistantTextFromStdout(stdout: string): string {
   const filtered = lines
     .map((l) => l.trim())
     .filter((l) => l.length > 0)
-    .filter((l) => !l.startsWith("PAI "))
+    .filter((l) => !l.startsWith("🤖 "))
     .filter((l) => !l.startsWith("[CONTEXT INJECTION]"))
     .filter((l) => !l.startsWith("Hook "))
     .filter((l) => !l.startsWith("[WARN]"))

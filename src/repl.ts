@@ -25,7 +25,7 @@ function parseBoolEnv(name: string, fallback: boolean): boolean {
 function resolveDefaultProvider(explicit?: ProviderName): ProviderName {
   if (explicit) return explicit;
 
-  const envProvider = (process.env.PAI_UT_DEFAULT_PROVIDER || "").trim().toLowerCase();
+  const envProvider = (process.env.UNIFIED_AGENT_DEFAULT_PROVIDER || "").trim().toLowerCase();
   const fromEnv =
     envProvider === "codex" || envProvider === "claude" || envProvider === "gemini" || envProvider === "mock"
       ? (envProvider as ProviderName)
@@ -46,7 +46,7 @@ function resolveDefaultProvider(explicit?: ProviderName): ProviderName {
 function resolveDefaultModel(explicit?: string): string | undefined {
   const direct = (explicit || "").trim();
   if (direct) return direct;
-  const envModel = (process.env.PAI_UT_DEFAULT_MODEL || "").trim();
+  const envModel = (process.env.UNIFIED_AGENT_DEFAULT_MODEL || "").trim();
   return envModel || undefined;
 }
 
@@ -69,8 +69,8 @@ export async function runRepl(options: RunReplOptions = {}): Promise<void> {
   const contextCfg: ContextConfig = {
     mode: options.contextMode || "recent",
     turns: options.contextTurns || 12,
-    maxChars: options.contextChars || Number.parseInt(process.env.PAI_UT_CONTEXT_MAX_CHARS || "12000", 10),
-    includeMemoryInject: options.includeMemoryInject ?? parseBoolEnv("PAI_UT_MEM_DEFAULT", false),
+    maxChars: options.contextChars || Number.parseInt(process.env.UNIFIED_AGENT_CONTEXT_MAX_CHARS || "12000", 10),
+    includeMemoryInject: options.includeMemoryInject ?? parseBoolEnv("UNIFIED_AGENT_MEM_DEFAULT", false),
   };
 
   const printHelp = () => {
@@ -114,7 +114,7 @@ export async function runRepl(options: RunReplOptions = {}): Promise<void> {
     if (contextCfg.includeMemoryInject && (await mem.health())) {
       const ctx = await mem.contextInject(s.project);
       if (ctx && ctx.trim()) {
-        const maxChars = Number.parseInt(process.env.PAI_UT_MEM_MAX_CHARS || "8000", 10);
+        const maxChars = Number.parseInt(process.env.UNIFIED_AGENT_MEM_MAX_CHARS || "8000", 10);
         injected = ctx.trim().slice(0, Number.isFinite(maxChars) ? maxChars : 8000);
         await sm.recordMemoryInjected(injected);
       }
@@ -207,7 +207,7 @@ export async function runRepl(options: RunReplOptions = {}): Promise<void> {
         const stored = await mem.storeObservation({
           contentSessionId: s.id,
           cwd: s.cwd,
-          tool_name: "pai-unified-terminal.note",
+          tool_name: "unified-agent.note",
           tool_input: { text: c.text },
           tool_response: { ok: true },
         });

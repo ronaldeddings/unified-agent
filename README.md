@@ -1,4 +1,4 @@
-# PAI Unified Terminal
+# unified-agent
 
 One interactive terminal UX above Claude, Codex, and Gemini.
 
@@ -23,7 +23,7 @@ Delegated provider calls are hard-set to YOLO/unsafe mode:
 Gemini reliability defaults to preview-first model fallback:
 
 - order: `gemini-3-flash-preview` -> `gemini-2.5-flash` -> `gemini-2.5-pro` -> `auto`
-- override with: `PAI_UT_GEMINI_MODELS=gemini-3-flash-preview,gemini-2.5-flash,gemini-2.5-pro,auto`
+- override with: `UNIFIED_AGENT_GEMINI_MODELS=gemini-3-flash-preview,gemini-2.5-flash,gemini-2.5-pro,auto`
 
 ## Requirements
 
@@ -81,7 +81,7 @@ bun run smoke
 Optional provider CLI smoke (may call external services):
 
 ```bash
-PAI_UT_SMOKE_PROVIDERS=1 bun run smoke
+UNIFIED_AGENT_SMOKE_PROVIDERS=1 bun run smoke
 ```
 
 ## Commands
@@ -107,11 +107,11 @@ PAI_UT_SMOKE_PROVIDERS=1 bun run smoke
 
 By default, data is stored in:
 
-- JSONL: `~/.pai-unified-terminal/sessions/<metaSessionId>.jsonl`
-- SQLite: `~/.pai-unified-terminal/sessions.db`
+- JSONL: `~/.unified-agent/sessions/<metaSessionId>.jsonl`
+- SQLite: `~/.unified-agent/sessions.db`
 
 Override with:
 
-- `PAI_UT_DATA_DIR=/path/to/dir`
-- `PAI_UT_DEFAULT_PROVIDER=codex|claude|gemini|mock`
-- `PAI_UT_DEFAULT_MODEL=<model-name>`
+- `UNIFIED_AGENT_DATA_DIR=/path/to/dir`
+- `UNIFIED_AGENT_DEFAULT_PROVIDER=codex|claude|gemini|mock`
+- `UNIFIED_AGENT_DEFAULT_MODEL=<model-name>`

@@ -8,7 +8,7 @@ import type { CanonicalEvent } from "../src/session/types";
 
 describe("storage", () => {
   test("sqlite persists meta session and events", async () => {
-    const dir = await mkdtemp(join(tmpdir(), "pai-ut-test-"));
+    const dir = await mkdtemp(join(tmpdir(), "unified-agent-test-"));
     const dbPath = join(dir, "db.sqlite");
     const db = new SessionDb(dbPath);
 
@@ -42,8 +42,8 @@ describe("storage", () => {
   });
 
   test("jsonl appends one line per event", async () => {
-    const dir = await mkdtemp(join(tmpdir(), "pai-ut-test-"));
-    process.env.PAI_UT_DATA_DIR = dir;
+    const dir = await mkdtemp(join(tmpdir(), "unified-agent-test-"));
+    process.env.UNIFIED_AGENT_DATA_DIR = dir;
 
     const e: CanonicalEvent = {
       v: 1,
