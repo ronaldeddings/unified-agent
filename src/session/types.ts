@@ -8,7 +8,12 @@ export type CanonicalEventType =
   | "user_message"
   | "assistant_message"
   | "memory_injected"
-  | "error";
+  | "error"
+  | "control_request"
+  | "control_response"
+  | "control_cancel_request"
+  | "transport_state"
+  | "permission_cancelled";
 
 export interface CanonicalEventBase {
   v: 1;
@@ -22,6 +27,7 @@ export interface CanonicalEventBase {
 
 export interface CanonicalTextEvent extends CanonicalEventBase {
   text: string;
+  payload?: unknown;
 }
 
 export type CanonicalEvent = CanonicalTextEvent;
@@ -33,4 +39,8 @@ export interface MetaSession {
   createdAtEpoch: number;
   activeProvider: ProviderName;
   activeModel?: string;
+  brainUrl?: string;
+  brainProvider?: ProviderName;
+  gatewaySessionId?: string;
+  providerSessionId?: string;
 }

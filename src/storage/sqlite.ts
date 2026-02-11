@@ -26,7 +26,11 @@ export class SessionDb {
         cwd TEXT NOT NULL,
         created_at_epoch INTEGER NOT NULL,
         active_provider TEXT NOT NULL,
-        active_model TEXT
+        active_model TEXT,
+        brain_url TEXT,
+        brain_provider TEXT,
+        gateway_session_id TEXT,
+        provider_session_id TEXT
       );
 
       CREATE TABLE IF NOT EXISTS events (
@@ -36,6 +40,7 @@ export class SessionDb {
         provider TEXT NOT NULL,
         type TEXT NOT NULL,
         text TEXT NOT NULL,
+        payload_json TEXT,
         project TEXT NOT NULL,
         cwd TEXT NOT NULL,
         raw_json TEXT NOT NULL,
@@ -48,19 +53,42 @@ export class SessionDb {
     `);
 
     const columns = this.db.query("PRAGMA table_info(meta_sessions)").all() as Array<{ name: string }>;
-    const hasActiveModel = columns.some((c) => c.name === "active_model");
-    if (!hasActiveModel) {
-      this.db.run("ALTER TABLE meta_sessions ADD COLUMN active_model TEXT;");
+    this.ensureColumn("meta_sessions", "active_model", "TEXT");
+    this.ensureColumn("meta_sessions", "brain_url", "TEXT");
+    this.ensureColumn("meta_sessions", "brain_provider", "TEXT");
+    this.ensureColumn("meta_sessions", "gateway_session_id", "TEXT");
+    this.ensureColumn("meta_sessions", "provider_session_id", "TEXT");
+    this.ensureColumn("events", "payload_json", "TEXT");
+  }
+
+  private ensureColumn(table: string, column: string, definition: string): void {
+    const columns = this.db.query(`PRAGMA table_info(${table})`).all() as Array<{ name: string }>;
+    const hasColumn = columns.some((c) => c.name === column);
+    if (!hasColumn) {
+      this.db.run(`ALTER TABLE ${table} ADD COLUMN ${column} ${definition};`);
     }
   }
 
   createMetaSession(s: MetaSession): void {
     this.db
       .prepare(
-        `INSERT INTO meta_sessions (id, project, cwd, created_at_epoch, active_provider, active_model)
-         VALUES (?, ?, ?, ?, ?, ?)`
+        `INSERT INTO meta_sessions (
+          id, project, cwd, created_at_epoch, active_provider, active_model,
+          brain_url, brain_provider, gateway_session_id, provider_session_id
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
       )
-      .run(s.id, s.project, s.cwd, s.createdAtEpoch, s.activeProvider, s.activeModel || null);
+      .run(
+        s.id,
+        s.project,
+        s.cwd,
+        s.createdAtEpoch,
+        s.activeProvider,
+        s.activeModel || null,
+        s.brainUrl || null,
+        s.brainProvider || null,
+        s.gatewaySessionId || null,
+        s.providerSessionId || null
+      );
   }
 
   updateActiveProvider(metaSessionId: string, provider: ProviderName): void {
@@ -75,9 +103,31 @@ export class SessionDb {
       .run((model || "").trim() || null, metaSessionId);
   }
 
+  updateBrain(metaSessionId: string, args: { brainUrl?: string; brainProvider?: ProviderName; gatewaySessionId?: string }): void {
+    this.db
+      .prepare("UPDATE meta_sessions SET brain_url = ?, brain_provider = ?, gateway_session_id = ? WHERE id = ?")
+      .run(
+        (args.brainUrl || "").trim() || null,
+        args.brainProvider || null,
+        (args.gatewaySessionId || "").trim() || null,
+        metaSessionId
+      );
+  }
+
+  updateProviderSessionId(metaSessionId: string, providerSessionId?: string): void {
+    this.db
+      .prepare("UPDATE meta_sessions SET provider_session_id = ? WHERE id = ?")
+      .run((providerSessionId || "").trim() || null, metaSessionId);
+  }
+
   getMetaSession(id: string): MetaSession | null {
     const row = this.db
-      .query("SELECT id, project, cwd, created_at_epoch, active_provider, active_model FROM meta_sessions WHERE id = ?")
+      .query(
+        `SELECT
+          id, project, cwd, created_at_epoch, active_provider, active_model,
+          brain_url, brain_provider, gateway_session_id, provider_session_id
+         FROM meta_sessions WHERE id = ?`
+      )
       .get(id) as any;
     if (!row) return null;
     return {
@@ -87,13 +137,20 @@ export class SessionDb {
       createdAtEpoch: row.created_at_epoch,
       activeProvider: row.active_provider as ProviderName,
       activeModel: row.active_model || undefined,
+      brainUrl: row.brain_url || undefined,
+      brainProvider: row.brain_provider || undefined,
+      gatewaySessionId: row.gateway_session_id || undefined,
+      providerSessionId: row.provider_session_id || undefined,
     };
   }
 
   listMetaSessions(limit = 20): MetaSession[] {
     const rows = this.db
       .query(
-        "SELECT id, project, cwd, created_at_epoch, active_provider, active_model FROM meta_sessions ORDER BY created_at_epoch DESC LIMIT ?"
+        `SELECT
+          id, project, cwd, created_at_epoch, active_provider, active_model,
+          brain_url, brain_provider, gateway_session_id, provider_session_id
+         FROM meta_sessions ORDER BY created_at_epoch DESC LIMIT ?`
       )
       .all(limit) as any[];
     return rows.map((r) => ({
@@ -103,14 +160,18 @@ export class SessionDb {
       createdAtEpoch: r.created_at_epoch,
       activeProvider: r.active_provider as ProviderName,
       activeModel: r.active_model || undefined,
+      brainUrl: r.brain_url || undefined,
+      brainProvider: r.brain_provider || undefined,
+      gatewaySessionId: r.gateway_session_id || undefined,
+      providerSessionId: r.provider_session_id || undefined,
     }));
   }
 
   insertEvent(e: CanonicalEvent, createdAtEpoch = Date.now()): void {
     this.db
       .prepare(
-        `INSERT INTO events (meta_session_id, ts, provider, type, text, project, cwd, raw_json, created_at_epoch)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
+        `INSERT INTO events (meta_session_id, ts, provider, type, text, payload_json, project, cwd, raw_json, created_at_epoch)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
       )
       .run(
         e.metaSessionId,
@@ -118,6 +179,7 @@ export class SessionDb {
         e.provider,
         e.type,
         e.text,
+        e.payload === undefined ? null : JSON.stringify(e.payload),
         e.project,
         e.cwd,
         JSON.stringify(e),

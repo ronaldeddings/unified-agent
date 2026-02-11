@@ -7,6 +7,13 @@
     "start": "bun run src/cli.ts",
     "dev": "bun --hot src/cli.ts",
     "smoke": "bun run scripts/smoke.ts",
+    "smoke:gateway": "bun run scripts/gateway-smoke.ts",
+    "gateway:serve": "bun run scripts/gateway-serve.ts",
+    "smoke:adapter:claude": "bun run scripts/adapter-smoke-claude.ts",
+    "smoke:adapter:codex": "bun run scripts/adapter-smoke-codex.ts",
+    "smoke:adapter:gemini": "bun run scripts/adapter-smoke-gemini.ts",
+    "verify:e2e": "bun run scripts/e2e-user-flows.ts",
+    "migrate:remote": "bun run scripts/migrate-remote-metadata.ts",
     "test": "bun test"
   }
 }

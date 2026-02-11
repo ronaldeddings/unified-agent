@@ -3,6 +3,7 @@ import { spawn } from "node:child_process";
 export interface StreamRunOptions {
   onStdoutLine?: (line: string) => void;
   onStderrLine?: (line: string) => void;
+  signal?: AbortSignal;
 }
 
 export interface StreamRunResult {
@@ -19,6 +20,15 @@ export function runStreamingCommand(
 ): Promise<StreamRunResult> {
   return new Promise((resolve) => {
     const child = spawn(cmd, args, { cwd, stdio: ["ignore", "pipe", "pipe"] });
+    const onAbort = () => {
+      try {
+        child.kill("SIGTERM");
+      } catch {
+        // ignore
+      }
+    };
+    opts.signal?.addEventListener("abort", onAbort, { once: true });
+
     let stdout = "";
     let stderr = "";
     let outBuf = "";
@@ -50,6 +60,7 @@ export function runStreamingCommand(
     });
 
     child.on("close", (code) => {
+      opts.signal?.removeEventListener("abort", onAbort);
       if (outBuf.length > 0) opts.onStdoutLine?.(outBuf.replace(/\r$/, ""));
       if (errBuf.length > 0) opts.onStderrLine?.(errBuf.replace(/\r$/, ""));
       resolve({ stdout, stderr, code: code ?? 1 });
@@ -70,4 +81,3 @@ export function safeJsonParse(line: string): any | null {
     return null;
   }
 }
-

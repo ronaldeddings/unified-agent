@@ -707,3 +707,62 @@ Please confirm these decision points before coding:
 3. Should we allow insecure `ws://` for local development by default, or require explicit override?
 4. Should policy default be strict-deny for unknown control subtypes across all providers?
 5. Do you want phase-1 implementation to ship Claude-first, or deliver all three adapters behind feature flags in one release?
+
+## 17. Implementation Status (2026-02-11)
+
+The following capabilities are now implemented in this repo:
+
+1. CLI brain flags are live: `--brain-url`, `--brain-provider`, `--brain-session-id`.
+2. REPL brain commands are live: `:brain connect`, `:brain disconnect`, `:brain status`, `:brain replay`.
+3. Canonical session schema includes remote fields: `brainUrl`, `brainProvider`, `gatewaySessionId`, `providerSessionId`.
+4. Canonical event schema includes control/transport events with structured payloads.
+5. SQLite schema and migration logic include remote metadata and `events.payload_json`.
+6. Adapter layer is implemented:
+   - `ClaudeNativeAdapter` forwards `sdkUrl` into native Claude CLI `--sdk-url`.
+   - `CodexCompatAdapter` and `GeminiCompatAdapter` implement compatibility-mode control handling.
+7. Gateway core package exists and is wired with protocol validation, policy, routing, replay buffer, queueing primitives, pending permissions, heartbeat, and watchdog scaffolding.
+8. WebSocket gateway server is implemented with health/models/usage endpoints and session event handling.
+9. Replay runner is implemented for deterministic session replay reporting.
+10. Operational scripts are implemented: gateway smoke, provider adapter smokes, metadata migration.
+11. Documentation was updated for remote brain mode, capability matrix, rollout/rollback env controls, and troubleshooting.
+12. Automated test coverage was expanded across CLI parsing, command parsing, protocol, policy, queueing, router lifecycle, replay, normalizers, metrics, and migrations.
+
+Verification executed:
+
+- `bun test`: all tests passing.
+- `bun run smoke`: passing.
+- `bun run smoke:gateway`: passing.
+
+Remaining phase-gated items are primarily production-hardening and deeper parity concerns:
+
+1. Full companion-grade persistent outbound queue flushing across process restarts.
+2. Complete codex/gemini parity for every advanced control subtype with provider-native semantics.
+3. Production telemetry export pipeline (currently in-memory metrics are implemented).
+4. Phase-gated environment profile CRUD/worktree topology APIs.
+
+## 18. Verification Delta (Live Runs)
+
+Additional live verification completed after section 17:
+
+1. Real delegated one-shot runs succeeded for all providers:
+   - Claude: returned `UA_CLAUDE_OK`
+   - Codex: returned `UA_CODEX_OK`
+   - Gemini: returned response including `UA_GEMINI_OK`
+2. Real brain-mode runs with `--brain-url` succeeded for all providers:
+   - Codex: returned `BRAIN_CODEX_OK`
+   - Gemini: returned response including `BRAIN_GEMINI_OK`
+   - Claude: returned `BRAIN_CLAUDE_OK` via native sdk-url relay path
+3. Durable state and restart behavior verified by automated tests:
+   - Outbound queue survives router restart and flushes deterministically
+   - Pending permissions survive restart and can be recovered
+4. Metrics export surfaces verified:
+   - Prometheus text export via `/metrics`
+   - OTLP payload generation and optional push exporter
+5. Environment profile APIs added and covered with automated tests.
+
+Observed compatibility note from live Claude `--sdk-url` debugging:
+
+- Claude sdk-url one-shot parity now relies on duplex split behavior from `cli.js`:
+  - control/user frames are sent over stream-json stdin
+  - assistant/result/system events are observed over websocket relay
+- Gateway relay role support (`/ws?...&role=relay`) and tolerant unknown-type parsing were required to avoid protocol deadlocks from non-canonical event envelopes.

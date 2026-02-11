@@ -1,4 +1,5 @@
-import type { Provider, ProviderName } from "./types";
+import type { Provider } from "./types";
+import type { ProviderName } from "../session/types";
 import { ClaudeCliProvider } from "./claudeCli";
 import { CodexCliProvider } from "./codexCli";
 import { GeminiCliProvider } from "./geminiCli";
@@ -18,4 +19,3 @@ export function getProvider(name: ProviderName): Provider {
       return new MockProvider();
   }
 }
-

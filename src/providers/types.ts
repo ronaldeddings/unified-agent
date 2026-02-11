@@ -5,8 +5,28 @@ export interface ProviderResponse {
   raw?: unknown;
 }
 
-export interface Provider {
-  name: ProviderName;
-  ask(prompt: string, opts: { cwd: string; model?: string }): Promise<ProviderResponse>;
+export type PermissionMode = "default" | "acceptEdits" | "plan" | "bypassPermissions";
+
+export interface ProviderAskOptions {
+  cwd: string;
+  model?: string;
+  sdkUrl?: string;
+  brainSessionId?: string;
+  permissionMode?: PermissionMode;
+  maxThinkingTokens?: number;
+  signal?: AbortSignal;
 }
 
+export interface ProviderCapabilities {
+  supportsSdkUrl?: boolean;
+  supportsInterrupt?: boolean;
+  supportsSetModel?: boolean;
+  supportsPermissionMode?: boolean;
+}
+
+export interface Provider {
+  name: ProviderName;
+  capabilities?: ProviderCapabilities;
+  ask(prompt: string, opts: ProviderAskOptions): Promise<ProviderResponse>;
+  interrupt?(sessionId?: string): Promise<void>;
+}

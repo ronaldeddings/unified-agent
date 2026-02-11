@@ -46,4 +46,24 @@ describe("parseLine", () => {
     const r = parseLine(":context turns 24");
     expect(r.command).toEqual({ kind: "context_turns", turns: 24 });
   });
+
+  test("parses :brain connect", () => {
+    const r = parseLine(":brain connect wss://brain.example/ws codex gw_abc");
+    expect(r.command).toEqual({
+      kind: "brain_connect",
+      url: "wss://brain.example/ws",
+      provider: "codex",
+      sessionId: "gw_abc",
+    });
+  });
+
+  test("parses :brain status", () => {
+    const r = parseLine(":brain status");
+    expect(r.command).toEqual({ kind: "brain_status" });
+  });
+
+  test("parses :brain replay", () => {
+    const r = parseLine(":brain replay ms_abc");
+    expect(r.command).toEqual({ kind: "brain_replay", sessionId: "ms_abc" });
+  });
 });

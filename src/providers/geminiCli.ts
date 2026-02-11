@@ -1,4 +1,4 @@
-import type { Provider, ProviderResponse } from "./types";
+import type { Provider, ProviderAskOptions, ProviderResponse } from "./types";
 import { runStreamingCommand, safeJsonParse, toOneLine } from "./stream";
 import { isMcpToolName, summarizeToolInput, summarizeToolOutput } from "./telemetry";
 
@@ -6,8 +6,13 @@ const DEFAULT_GEMINI_FALLBACKS = ["gemini-3-flash-preview", "gemini-2.5-flash", 
 
 export class GeminiCliProvider implements Provider {
   name = "gemini" as const;
+  capabilities = {
+    supportsSetModel: true,
+    supportsInterrupt: false,
+    supportsPermissionMode: true,
+  };
 
-  async ask(prompt: string, opts: { cwd: string; model?: string }): Promise<ProviderResponse> {
+  async ask(prompt: string, opts: ProviderAskOptions): Promise<ProviderResponse> {
     const models = buildGeminiModelCandidates(opts.model, process.env.UNIFIED_AGENT_GEMINI_MODELS);
     let lastError = "";
 
@@ -19,7 +24,7 @@ export class GeminiCliProvider implements Provider {
       }
 
       try {
-        const res = await runGeminiOnce(prompt, opts.cwd, model);
+        const res = await runGeminiOnce(prompt, opts.cwd, model, opts.permissionMode, opts.signal);
         if (models.length > 1 && i > 0) {
           console.log(`[gemini] model fallback succeeded with ${label}`);
         }
@@ -40,15 +45,21 @@ export class GeminiCliProvider implements Provider {
   }
 }
 
-export function buildGeminiArgs(prompt: string, model?: string): string[] {
+export function buildGeminiArgs(
+  prompt: string,
+  model?: string,
+  permissionMode?: "default" | "acceptEdits" | "plan" | "bypassPermissions"
+): string[] {
   const args = [
     "-p",
     prompt,
     "--output-format",
     "stream-json",
-    // Enforce YOLO mode for delegated Gemini calls.
-    "--yolo",
   ];
+  if (!permissionMode || permissionMode === "bypassPermissions") {
+    // Preserve existing delegated behavior unless caller chooses a stricter mode.
+    args.push("--yolo");
+  }
   if (model && model !== "auto") args.unshift("--model", model);
   return args;
 }
@@ -100,13 +111,20 @@ export function isGeminiFallbackEligibleError(s: string): boolean {
   );
 }
 
-async function runGeminiOnce(prompt: string, cwd: string, model?: string): Promise<{ text: string; stderr: string }> {
-  const args = buildGeminiArgs(prompt, model);
+async function runGeminiOnce(
+  prompt: string,
+  cwd: string,
+  model?: string,
+  permissionMode?: "default" | "acceptEdits" | "plan" | "bypassPermissions",
+  signal?: AbortSignal
+): Promise<{ text: string; stderr: string }> {
+  const args = buildGeminiArgs(prompt, model, permissionMode);
   let hadFailure = false;
   let failureSummary = "";
   let finalText = "";
   let sawAssistantDelta = false;
   const { stdout, stderr, code } = await runStreamingCommand("gemini", args, cwd, {
+    signal,
     onStdoutLine: (line) => {
       const obj = safeJsonParse(line);
       if (obj) {

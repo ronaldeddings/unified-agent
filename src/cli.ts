@@ -7,6 +7,9 @@ interface CliArgs {
   once?: boolean;
   provider?: ProviderName;
   model?: string;
+  brainUrl?: string;
+  brainProvider?: ProviderName;
+  brainSessionId?: string;
   project?: string;
   contextMode?: "off" | "recent" | "full";
   contextTurns?: number;
@@ -15,7 +18,9 @@ interface CliArgs {
   help?: boolean;
 }
 
-function parseArgs(argv: string[]): CliArgs {
+const BRAIN_PROVIDER_VALUES = new Set<ProviderName>(["claude", "codex", "gemini", "mock"]);
+
+export function parseArgs(argv: string[]): CliArgs {
   const out: CliArgs = {};
   const promptParts: string[] = [];
 
@@ -41,6 +46,35 @@ function parseArgs(argv: string[]): CliArgs {
       const m = (argv[++i] || "").trim();
       if (!m) throw new Error("--model requires a value");
       out.model = m;
+      continue;
+    }
+    if (a === "--brain-url") {
+      const raw = (argv[++i] || "").trim();
+      if (!raw) throw new Error("--brain-url requires a value");
+      let parsed: URL;
+      try {
+        parsed = new URL(raw);
+      } catch {
+        throw new Error(`invalid --brain-url: ${raw}`);
+      }
+      if (parsed.protocol !== "ws:" && parsed.protocol !== "wss:") {
+        throw new Error("--brain-url must use ws:// or wss://");
+      }
+      out.brainUrl = parsed.toString();
+      continue;
+    }
+    if (a === "--brain-provider") {
+      const p = (argv[++i] || "").toLowerCase() as ProviderName;
+      if (!BRAIN_PROVIDER_VALUES.has(p)) {
+        throw new Error(`invalid --brain-provider: ${p}`);
+      }
+      out.brainProvider = p;
+      continue;
+    }
+    if (a === "--brain-session-id") {
+      const id = (argv[++i] || "").trim();
+      if (!id) throw new Error("--brain-session-id requires a value");
+      out.brainSessionId = id;
       continue;
     }
     if (a === "--project") {
@@ -96,29 +130,41 @@ function printUsage(): void {
   console.log("  unified --once --provider claude --model claude-sonnet-4-20250514 --prompt \"one shot\"");
   console.log("  unified --project myproj");
   console.log("  unified --mem off --context-mode recent --context-turns 20 \"prompt\"");
+  console.log("  unified --brain-url wss://brain.example/ws --brain-provider claude --brain-session-id sess_123");
 }
 
-let args: CliArgs;
-try {
-  args = parseArgs(process.argv.slice(2));
-} catch (e) {
-  console.error(e instanceof Error ? e.message : String(e));
-  printUsage();
-  process.exit(1);
-}
-if (args.help) {
-  printUsage();
-  process.exit(0);
+export async function main(argv = process.argv.slice(2)): Promise<void> {
+  let args: CliArgs;
+  try {
+    args = parseArgs(argv);
+  } catch (e) {
+    console.error(e instanceof Error ? e.message : String(e));
+    printUsage();
+    process.exit(1);
+    return;
+  }
+  if (args.help) {
+    printUsage();
+    process.exit(0);
+    return;
+  }
+
+  await runRepl({
+    initialPrompt: args.prompt,
+    once: args.once,
+    provider: args.provider,
+    model: args.model,
+    brainUrl: args.brainUrl,
+    brainProvider: args.brainProvider,
+    brainSessionId: args.brainSessionId,
+    project: args.project,
+    contextMode: args.contextMode,
+    contextTurns: args.contextTurns,
+    contextChars: args.contextChars,
+    includeMemoryInject: args.includeMemoryInject,
+  });
 }
 
-await runRepl({
-  initialPrompt: args.prompt,
-  once: args.once,
-  provider: args.provider,
-  model: args.model,
-  project: args.project,
-  contextMode: args.contextMode,
-  contextTurns: args.contextTurns,
-  contextChars: args.contextChars,
-  includeMemoryInject: args.includeMemoryInject,
-});
+if (import.meta.main) {
+  await main();
+}

@@ -1,20 +1,26 @@
 import { mkdtemp, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import type { Provider, ProviderResponse } from "./types";
+import type { Provider, ProviderAskOptions, ProviderResponse } from "./types";
 import { runStreamingCommand, safeJsonParse, toOneLine } from "./stream";
 import { isMcpToolName, summarizeCommandOutput, summarizeToolInput } from "./telemetry";
 
 export class CodexCliProvider implements Provider {
   name = "codex" as const;
+  capabilities = {
+    supportsSetModel: true,
+    supportsInterrupt: false,
+    supportsPermissionMode: true,
+  };
 
-  async ask(prompt: string, opts: { cwd: string; model?: string }): Promise<ProviderResponse> {
+  async ask(prompt: string, opts: ProviderAskOptions): Promise<ProviderResponse> {
     const tmp = await mkdtemp(join(tmpdir(), "unified-agent-"));
     const outPath = join(tmp, "last.txt");
 
-    const args = buildCodexArgs(outPath, prompt, opts.model);
+    const args = buildCodexArgs(outPath, prompt, opts.model, opts.permissionMode);
 
     const { stderr, code } = await runStreamingCommand("codex", args, opts.cwd, {
+      signal: opts.signal,
       onStdoutLine: (line) => {
         const obj = safeJsonParse(line);
         if (!obj) return;
@@ -99,16 +105,23 @@ export class CodexCliProvider implements Provider {
   }
 }
 
-export function buildCodexArgs(outPath: string, prompt: string, model?: string): string[] {
+export function buildCodexArgs(
+  outPath: string,
+  prompt: string,
+  model?: string,
+  permissionMode?: "default" | "acceptEdits" | "plan" | "bypassPermissions"
+): string[] {
   const args = [
     "exec",
     "--skip-git-repo-check",
     "--output-last-message",
     outPath,
     "--json",
-    // Enforce YOLO mode for delegated Codex calls.
-    "--dangerously-bypass-approvals-and-sandbox",
   ];
+  if (!permissionMode || permissionMode === "bypassPermissions") {
+    // Preserve existing delegated behavior unless caller chooses a stricter mode.
+    args.push("--dangerously-bypass-approvals-and-sandbox");
+  }
   if (model) args.push("--model", model);
   args.push(prompt);
   return args;

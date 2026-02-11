@@ -12,3 +12,7 @@ export function getSessionsDir(): string {
 export function getSqlitePath(): string {
   return join(getDataDir(), "sessions.db");
 }
+
+export function getGatewayStatePath(): string {
+  return join(getDataDir(), "gateway-state.json");
+}

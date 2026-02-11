@@ -16,7 +16,11 @@ export type Command =
   | { kind: "mem_inject" }
   | { kind: "mem_stats" }
   | { kind: "mem_search"; query: string }
-  | { kind: "mem_note"; text: string };
+  | { kind: "mem_note"; text: string }
+  | { kind: "brain_connect"; url: string; provider?: ProviderName; sessionId?: string }
+  | { kind: "brain_disconnect" }
+  | { kind: "brain_status" }
+  | { kind: "brain_replay"; sessionId: string };
 
 export function parseLine(line: string): { command?: Command; userText?: string } {
   const trimmed = line.trimEnd();
@@ -105,6 +109,37 @@ export function parseLine(line: string): { command?: Command; userText?: string 
       const text = parts.slice(1).join(" ").trim();
       if (!text) return { command: { kind: "help" } };
       return { command: { kind: "mem_note", text } };
+    }
+    return { command: { kind: "help" } };
+  }
+
+  if (head === "brain") {
+    const sub = (parts[0] || "").toLowerCase();
+    if (sub === "disconnect") return { command: { kind: "brain_disconnect" } };
+    if (sub === "status") return { command: { kind: "brain_status" } };
+    if (sub === "replay") {
+      const sessionId = (parts[1] || "").trim();
+      if (!sessionId) return { command: { kind: "help" } };
+      return { command: { kind: "brain_replay", sessionId } };
+    }
+    if (sub === "connect") {
+      const urlRaw = (parts[1] || "").trim();
+      if (!urlRaw) return { command: { kind: "help" } };
+      let url: URL;
+      try {
+        url = new URL(urlRaw);
+      } catch {
+        return { command: { kind: "help" } };
+      }
+      if (url.protocol !== "ws:" && url.protocol !== "wss:") return { command: { kind: "help" } };
+
+      const provider = (parts[2] || "").toLowerCase() as ProviderName;
+      const providerValue =
+        provider === "claude" || provider === "codex" || provider === "gemini" || provider === "mock"
+          ? provider
+          : undefined;
+      const sessionId = (parts[3] || "").trim() || undefined;
+      return { command: { kind: "brain_connect", url: url.toString(), provider: providerValue, sessionId } };
     }
     return { command: { kind: "help" } };
   }

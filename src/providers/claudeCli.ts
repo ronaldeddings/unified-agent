@@ -1,15 +1,21 @@
-import type { Provider, ProviderResponse } from "./types";
+import type { PermissionMode, Provider, ProviderAskOptions, ProviderResponse } from "./types";
 import { runStreamingCommand, safeJsonParse, toOneLine } from "./stream";
 import { isMcpToolName, summarizeToolInput, summarizeToolOutput } from "./telemetry";
 
 export class ClaudeCliProvider implements Provider {
   name = "claude" as const;
+  capabilities = {
+    supportsSdkUrl: true,
+    supportsSetModel: true,
+    supportsPermissionMode: true,
+  };
 
-  async ask(prompt: string, opts: { cwd: string; model?: string }): Promise<ProviderResponse> {
-    const args = buildClaudeArgs(prompt, opts.model);
+  async ask(prompt: string, opts: ProviderAskOptions): Promise<ProviderResponse> {
+    const args = buildClaudeArgs(prompt, opts);
 
     let finalText = "";
     const { stdout, stderr, code } = await runStreamingCommand("claude", args, opts.cwd, {
+      signal: opts.signal,
       onStdoutLine: (line) => {
         const obj = safeJsonParse(line);
         if (!obj) return;
@@ -105,16 +111,37 @@ export class ClaudeCliProvider implements Provider {
   }
 }
 
-export function buildClaudeArgs(prompt: string, model?: string): string[] {
+export function buildClaudeArgs(prompt: string, opts: {
+  model?: string;
+  sdkUrl?: string;
+  permissionMode?: PermissionMode;
+  maxThinkingTokens?: number;
+} = {}): string[] {
+  const shouldBypassPermissions = resolveBypassPermissions(opts.permissionMode, opts.sdkUrl);
   const args = [
     "-p",
     "--output-format",
     "stream-json",
     "--verbose",
-    // Enforce YOLO mode for delegated Claude calls.
-    "--dangerously-skip-permissions",
   ];
-  if (model) args.push("--model", model);
+  if (shouldBypassPermissions) {
+    // Preserve existing delegated behavior unless explicitly overridden.
+    args.push("--dangerously-skip-permissions");
+  }
+  if (opts.model) args.push("--model", opts.model);
+  if (opts.maxThinkingTokens !== undefined && opts.maxThinkingTokens !== null) {
+    args.push("--max-thinking-tokens", String(opts.maxThinkingTokens));
+  }
+  if (opts.sdkUrl) args.push("--sdk-url", opts.sdkUrl);
   args.push(prompt);
   return args;
+}
+
+function resolveBypassPermissions(permissionMode?: PermissionMode, sdkUrl?: string): boolean {
+  if (permissionMode === "bypassPermissions") return true;
+  if (permissionMode === "default" || permissionMode === "acceptEdits" || permissionMode === "plan") {
+    return false;
+  }
+  // Keep historical unsafe default for local delegated mode only.
+  return !sdkUrl;
 }

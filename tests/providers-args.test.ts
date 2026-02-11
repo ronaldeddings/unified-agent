@@ -5,7 +5,7 @@ import { buildGeminiArgs, buildGeminiModelCandidates, isGeminiFallbackEligibleEr
 
 describe("provider arg builders", () => {
   test("claude always includes dangerously-skip-permissions", () => {
-    const args = buildClaudeArgs("hello");
+    const args = buildClaudeArgs("hello", {});
     expect(args).toContain("--dangerously-skip-permissions");
     expect(args).toContain("--output-format");
     expect(args).toContain("stream-json");
@@ -13,10 +13,23 @@ describe("provider arg builders", () => {
   });
 
   test("claude passes explicit --model", () => {
-    const args = buildClaudeArgs("hello", "claude-sonnet-4-20250514");
+    const args = buildClaudeArgs("hello", { model: "claude-sonnet-4-20250514" });
     const idx = args.indexOf("--model");
     expect(idx).toBeGreaterThan(-1);
     expect(args[idx + 1]).toBe("claude-sonnet-4-20250514");
+  });
+
+  test("claude supports --sdk-url and disables default yolo for sdk mode", () => {
+    const args = buildClaudeArgs("hello", { sdkUrl: "wss://brain.example/ws" });
+    const sdkIdx = args.indexOf("--sdk-url");
+    expect(sdkIdx).toBeGreaterThan(-1);
+    expect(args[sdkIdx + 1]).toBe("wss://brain.example/ws");
+    expect(args.includes("--dangerously-skip-permissions")).toBe(false);
+  });
+
+  test("claude keeps yolo when permission mode is bypassPermissions", () => {
+    const args = buildClaudeArgs("hello", { sdkUrl: "wss://brain.example/ws", permissionMode: "bypassPermissions" });
+    expect(args).toContain("--dangerously-skip-permissions");
   });
 
   test("codex always includes dangerously-bypass-approvals-and-sandbox", () => {
@@ -37,6 +50,11 @@ describe("provider arg builders", () => {
     expect(args).toContain("--yolo");
     expect(args).toContain("--output-format");
     expect(args).toContain("stream-json");
+  });
+
+  test("gemini can disable yolo when permission mode is explicit", () => {
+    const args = buildGeminiArgs("hello", "gemini-2.5-pro", "default");
+    expect(args.includes("--yolo")).toBe(false);
   });
 
   test("gemini passes explicit --model", () => {

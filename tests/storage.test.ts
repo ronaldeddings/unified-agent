@@ -19,6 +19,10 @@ describe("storage", () => {
       createdAtEpoch: 1,
       activeProvider: "mock",
       activeModel: "gpt-5",
+      brainUrl: "wss://brain.example/ws",
+      brainProvider: "claude",
+      gatewaySessionId: "gw_1",
+      providerSessionId: "provider_1",
     });
 
     const e: CanonicalEvent = {
@@ -30,12 +34,16 @@ describe("storage", () => {
       provider: "mock",
       type: "user_message",
       text: "hi",
+      payload: { source: "test" },
     };
     db.insertEvent(e, 1);
 
     const s = db.getMetaSession("ms_test");
     expect(s?.id).toBe("ms_test");
     expect(s?.activeModel).toBe("gpt-5");
+    expect(s?.brainUrl).toBe("wss://brain.example/ws");
+    expect(s?.gatewaySessionId).toBe("gw_1");
+    expect(s?.providerSessionId).toBe("provider_1");
     expect(db.getRecentEvents("ms_test", 1)[0].text).toBe("hi");
 
     db.close();

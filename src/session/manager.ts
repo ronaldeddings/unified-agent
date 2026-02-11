@@ -20,7 +20,16 @@ export class SessionManager {
     return this.session;
   }
 
-  async newSession(args: { project?: string; cwd?: string; provider?: ProviderName; model?: string }): Promise<MetaSession> {
+  async newSession(args: {
+    project?: string;
+    cwd?: string;
+    provider?: ProviderName;
+    model?: string;
+    brainUrl?: string;
+    brainProvider?: ProviderName;
+    gatewaySessionId?: string;
+    providerSessionId?: string;
+  }): Promise<MetaSession> {
     const cwd = args.cwd || nodeCwd();
     const project = args.project?.trim() || "default";
     const now = Date.now();
@@ -33,6 +42,10 @@ export class SessionManager {
       createdAtEpoch: now,
       activeProvider: args.provider || "mock",
       activeModel: model,
+      brainUrl: (args.brainUrl || "").trim() || undefined,
+      brainProvider: args.brainProvider,
+      gatewaySessionId: (args.gatewaySessionId || "").trim() || undefined,
+      providerSessionId: (args.providerSessionId || "").trim() || undefined,
     };
     this.db.createMetaSession(s);
     this.session = s;
@@ -113,6 +126,41 @@ export class SessionManager {
     });
   }
 
+  async setBrain(args: { url?: string; provider?: ProviderName; gatewaySessionId?: string }): Promise<void> {
+    if (!this.session) throw new Error("no active meta-session");
+    this.session.brainUrl = (args.url || "").trim() || undefined;
+    this.session.brainProvider = args.provider;
+    this.session.gatewaySessionId = (args.gatewaySessionId || "").trim() || undefined;
+    this.db.updateBrain(this.session.id, {
+      brainUrl: this.session.brainUrl,
+      brainProvider: this.session.brainProvider,
+      gatewaySessionId: this.session.gatewaySessionId,
+    });
+    await this.recordEvent({
+      v: 1,
+      ts: new Date().toISOString(),
+      metaSessionId: this.session.id,
+      project: this.session.project,
+      cwd: this.session.cwd,
+      provider: this.session.activeProvider,
+      type: "transport_state",
+      text: this.session.brainUrl
+        ? `brain connected url=${this.session.brainUrl} provider=${this.session.brainProvider || this.session.activeProvider}`
+        : "brain disconnected",
+      payload: {
+        brainUrl: this.session.brainUrl,
+        brainProvider: this.session.brainProvider,
+        gatewaySessionId: this.session.gatewaySessionId,
+      },
+    });
+  }
+
+  async setProviderSessionId(providerSessionId?: string): Promise<void> {
+    if (!this.session) throw new Error("no active meta-session");
+    this.session.providerSessionId = (providerSessionId || "").trim() || undefined;
+    this.db.updateProviderSessionId(this.session.id, this.session.providerSessionId);
+  }
+
   async recordUser(text: string): Promise<void> {
     if (!this.session) throw new Error("no active meta-session");
     await this.recordEvent(this.makeTextEvent("user_message", text));
@@ -133,7 +181,27 @@ export class SessionManager {
     await this.recordEvent(this.makeTextEvent("error", text));
   }
 
-  private makeTextEvent(type: CanonicalEvent["type"], text: string): CanonicalEvent {
+  async recordControlRequest(subtype: string, payload?: unknown): Promise<void> {
+    if (!this.session) throw new Error("no active meta-session");
+    await this.recordEvent(this.makeTextEvent("control_request", subtype, payload));
+  }
+
+  async recordControlResponse(subtype: string, payload?: unknown): Promise<void> {
+    if (!this.session) throw new Error("no active meta-session");
+    await this.recordEvent(this.makeTextEvent("control_response", subtype, payload));
+  }
+
+  async recordPermissionCancelled(payload?: unknown): Promise<void> {
+    if (!this.session) throw new Error("no active meta-session");
+    await this.recordEvent(this.makeTextEvent("permission_cancelled", "permission request cancelled", payload));
+  }
+
+  getRecentEvents(limit = 200): CanonicalEvent[] {
+    if (!this.session) throw new Error("no active meta-session");
+    return this.db.getRecentEvents(this.session.id, limit).reverse();
+  }
+
+  private makeTextEvent(type: CanonicalEvent["type"], text: string, payload?: unknown): CanonicalEvent {
     if (!this.session) throw new Error("no active meta-session");
     return {
       v: 1,
@@ -144,10 +212,11 @@ export class SessionManager {
       provider: this.session.activeProvider,
       type,
       text,
+      payload,
     };
   }
 
-  private async recordEvent(e: CanonicalEvent): Promise<void> {
+  async recordEvent(e: CanonicalEvent): Promise<void> {
     this.db.insertEvent(e);
     await appendEventJsonl(e.metaSessionId, e);
   }
