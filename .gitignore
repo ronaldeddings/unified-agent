@@ -1,0 +1,30 @@
+# dependencies
+node_modules/
+
+# build/test outputs
+dist/
+build/
+coverage/
+.nyc_output/
+*.tsbuildinfo
+
+# logs
+*.log
+logs/
+
+# environment and secrets
+.env
+.env.*
+!.env.example
+
+# local runtime data
+tmp/
+temp/
+.cache/
+
+# editor/OS noise
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+

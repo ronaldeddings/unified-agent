@@ -1,0 +1,70 @@
+# Internal To-Do List (Ungrouped)
+
+- [ ] Decide whether the unified layer wraps CLIs or APIs.
+- [x] Define the canonical session schema for all providers.
+- [x] Define a meta-session identifier and mapping strategy.
+- [ ] Inventory provider-specific session storage locations and formats.
+- [ ] Extend canonical schema to represent tool calls and results.
+- [ ] Decide how to represent delegated CLI transcripts canonically.
+- [ ] Document how Codex encrypted reasoning will be handled.
+- [ ] Document how Claude thinking blocks will be handled.
+- [ ] Add Gemini-to-canonical mapping including toolCalls if present.
+- [x] Add Gemini model fallback for preview capacity outages.
+- [ ] Create a stable project identity independent of cwd/hash.
+- [ ] Decide how cwd changes affect project identity and routing.
+- [ ] Decide how git metadata is recorded in canonical sessions.
+- [ ] Decide how to store token usage in canonical sessions.
+- [x] Choose a storage location for canonical sessions on disk.
+- [x] Decide JSONL vs SQLite vs both for canonical sessions.
+- [ ] Define export targets: Claude Code JSONL, Codex JSONL, Gemini JSON.
+- [ ] Implement canonical-to-Claude Code JSONL exporter.
+- [ ] Implement canonical-to-Codex JSONL exporter.
+- [ ] Implement canonical-to-Gemini JSON exporter.
+- [ ] Implement Claude Code JSONL importer to canonical schema.
+- [ ] Implement Codex JSONL importer to canonical schema.
+- [ ] Implement Gemini JSON importer to canonical schema.
+- [ ] Reuse or integrate coding-agent-fabricator conversion logic.
+- [ ] Decide whether to merge fabricator into the unified layer.
+- [ ] Identify which claude-mem DB tables must be written live.
+- [ ] Decide whether to write to claude-mem via SQLite or HTTP.
+- [x] Implement a memory query client using claude-mem endpoints.
+- [x] Implement a memory write path for new prompts and observations.
+- [x] Add redaction rules to prevent secrets entering persistence.
+- [x] Add a private-style exclusion mechanism for the unified layer.
+- [ ] Add deterministic session replay from canonical logs.
+- [ ] Add deterministic tool replay from canonical logs where possible.
+- [x] Define a command grammar for the interactive terminal.
+- [x] Implement provider switching without losing meta-session continuity.
+- [x] Implement session new|list|resume in the unified terminal.
+- [ ] Implement session export to each provider format.
+- [x] Implement mem search from inside the unified terminal.
+- [x] Implement mem stats by calling claude-mem stats.
+- [ ] Implement a progressive disclosure memory injection strategy.
+- [x] Define default context injection budget (tokens/characters).
+- [ ] Implement context injection transforms per provider.
+- [ ] Implement provider adapters (Claude, Codex, Gemini) in API mode.
+- [x] Implement provider adapters (Claude, Codex, Gemini) in delegated CLI mode.
+- [ ] Decide how authentication is configured for each provider.
+- [ ] Implement secure secret loading policy.
+- [ ] Add a config file for provider selection and defaults.
+- [ ] Add tests for format detection across all three session types.
+- [ ] Add tests for round-trip export/import invariants.
+- [ ] Add tests for prompt filtering (instructions/environment blocks).
+- [x] Add tests for redaction and private exclusion.
+- [x] Add a smoke test that creates a meta-session and switches providers.
+- [ ] Add documentation for operators: install, configure, run, debug.
+- [ ] Add a migration plan for existing sessions into canonical logs.
+- [ ] Define how and when claude-mem sync-all is invoked.
+- [ ] Add a scheduler or hook mechanism for incremental sync automation.
+- [ ] Define observability: logs, event stream, and error reporting.
+- [ ] Define user experience for interruptions and retries.
+- [ ] Define how tool failures are recorded and surfaced.
+- [ ] Define how file read/write operations are permissioned.
+- [ ] Decide whether to support MCP tool servers for non-Claude providers.
+- [ ] Decide whether to unify on MCP as the tool protocol.
+- [x] Prototype a minimal REPL UI in Bun/Node with readline.
+- [ ] Prototype a minimal TUI UI if readline is insufficient.
+- [ ] Evaluate tmux/wezterm integration as a fallback UX.
+- [ ] Decide on naming and placement under 00-09_System/01_Tools.
+- [x] Create a skeleton repo for the unified terminal layer tool.
+- [x] Add CI or a local test runner script for rapid verification.

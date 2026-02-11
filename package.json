@@ -1,0 +1,12 @@
+{
+  "name": "pai-unified-terminal",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "start": "bun run src/cli.ts",
+    "dev": "bun --hot src/cli.ts",
+    "smoke": "bun run scripts/smoke.ts",
+    "test": "bun test"
+  }
+}
