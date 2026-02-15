@@ -3,6 +3,7 @@ import { Database } from "bun:sqlite";
 import { dirname } from "node:path";
 import { getSqlitePath } from "../util/paths";
 import type { CanonicalEvent, MetaSession, ProviderName } from "../session/types";
+import { runDistillMigrations } from "./distillMigrations.ts";
 
 export class SessionDb {
   private db: Database;
@@ -59,6 +60,12 @@ export class SessionDb {
     this.ensureColumn("meta_sessions", "gateway_session_id", "TEXT");
     this.ensureColumn("meta_sessions", "provider_session_id", "TEXT");
     this.ensureColumn("events", "payload_json", "TEXT");
+    // Distillation scoring columns (Phase 1)
+    this.ensureColumn("events", "importance_score", "REAL");
+    this.ensureColumn("events", "chunk_id", "TEXT");
+    this.ensureColumn("events", "consensus_score", "REAL");
+    // Distillation tables (Phase 1)
+    runDistillMigrations(this.db);
   }
 
   private ensureColumn(table: string, column: string, definition: string): void {

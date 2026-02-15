@@ -23,6 +23,14 @@ export interface CanonicalEventBase {
   cwd: string;
   provider: ProviderName;
   type: CanonicalEventType;
+  // Distillation scoring fields (Phase 1 foundation)
+  importanceScore?: number;        // 0-100, assigned by importance scorer
+  chunkId?: string;                // Groups events into assessment units
+  assessmentScores?: Record<string, number>;  // { claude: 8.2, codex: 7.5, gemini: 8.0 }
+  consensusScore?: number;         // Weighted average of assessment scores
+  sourceSessionId?: string;        // Original session ID (for external ingestion)
+  sourcePlatform?: "claude" | "codex" | "gemini";  // Original platform
+  toolCalls?: { name: string; input?: string; output?: string }[];  // Extracted tool usage
 }
 
 export interface CanonicalTextEvent extends CanonicalEventBase {

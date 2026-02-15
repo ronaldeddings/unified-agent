@@ -677,9 +677,9 @@ End-to-end command that takes a question and produces a ready-to-use session fil
 
 Each item below is an individual, atomic task. No grouping. Items are ordered by dependency (earlier items unblock later ones).
 
-- [ ] 1. Create `src/parsers/` directory structure
-- [ ] 2. Define `ParsedEvent` interface in `src/parsers/types.ts`
-- [ ] 3. Define `SessionParser` interface in `src/parsers/types.ts`
+- [x] 1. Create `src/parsers/` directory structure
+- [x] 2. Define `ParsedEvent` interface in `src/parsers/types.ts`
+- [x] 3. Define `SessionParser` interface in `src/parsers/types.ts`
 - [ ] 4. Implement Claude JSONL parser in `src/parsers/claudeParser.ts` — handle `type: "assistant"` with `message.content` text blocks, `type: "user"` with `tool_result`, `type: "system"`, and `tool_use` extraction
 - [ ] 5. Implement Codex JSONL parser in `src/parsers/codexParser.ts` — handle `type: "item.completed"` with `command_execution` and `reasoning`, `type: "turn.completed"` for usage
 - [ ] 6. Implement Gemini JSON parser in `src/parsers/geminiParser.ts` — handle `type: "message"` with `role: "assistant"`, `type: "tool_call"`, `type: "tool_use"`, `type: "tool_result"`
@@ -688,23 +688,23 @@ Each item below is an individual, atomic task. No grouping. Items are ordered by
 - [ ] 9. Write unit tests for Codex JSONL parser with sample session data
 - [ ] 10. Write unit tests for Gemini JSON parser with sample session data
 - [ ] 11. Write unit tests for parser auto-detection across all three formats
-- [ ] 12. Create `src/scanner/` directory structure
-- [ ] 13. Define `ScannedSession` interface and `PLATFORM_SESSION_PATHS` in `src/scanner/paths.ts`
+- [x] 12. Create `src/scanner/` directory structure
+- [x] 13. Define `ScannedSession` interface and `PLATFORM_SESSION_PATHS` in `src/scanner/paths.ts`
 - [ ] 14. Implement session scanner in `src/scanner/scanner.ts` — glob each platform path, resolve `~`, return sorted `ScannedSession[]`
 - [ ] 15. Write unit test for scanner with mocked filesystem paths
-- [ ] 16. Create `src/scoring/` directory structure
-- [ ] 17. Define `ScoringConfig` interface in `src/scoring/importance.ts`
+- [x] 16. Create `src/scoring/` directory structure
+- [x] 17. Define `ScoringConfig` interface in `src/scoring/importance.ts`
 - [ ] 18. Implement `scoreEvent()` function with base score + bonus system (toolUse: +15, error: +20, userPrompt: +10, codeBlock: +10, fileEdit: +12, longContent: -5, systemEvent: -20, hookEvent: -15)
 - [ ] 19. Implement clamp logic to keep scores in 0-100 range
 - [ ] 20. Write unit tests for `scoreEvent()` covering all bonus/penalty paths
 - [ ] 21. Implement real-time scoring hook in `src/scoring/realtime.ts` — wrap `SessionManager.recordEvent()` to attach `importanceScore` before persistence
 - [ ] 22. Write unit test for real-time scoring hook verifying scores are attached to persisted events
-- [ ] 23. Define `Chunk` interface and `ChunkConfig` in `src/scoring/chunker.ts`
+- [x] 23. Define `Chunk` interface and `ChunkConfig` in `src/scoring/chunker.ts`
 - [ ] 24. Implement `buildChunks()` — filter below threshold, group into windows, estimate tokens, split oversized chunks, add overlap
-- [ ] 25. Implement token estimation helper (`content.length / 4` rough approximation)
+- [x] 25. Implement token estimation helper (`content.length / 4` rough approximation)
 - [ ] 26. Write unit tests for `buildChunks()` covering threshold filtering, token splitting, and overlap
-- [ ] 27. Create `src/assessment/` directory structure
-- [ ] 28. Define `AssessmentResult` and `AssessorConfig` interfaces in `src/assessment/assessor.ts`
+- [x] 27. Create `src/assessment/` directory structure
+- [x] 28. Define `AssessmentResult` and `AssessorConfig` interfaces in `src/assessment/assessor.ts`
 - [ ] 29. Implement structured assessment prompt template in `src/assessment/prompts.ts` — include chunk content, ask for 1-10 rating on relevance/signal-density/reusability, request JSON response
 - [ ] 30. Implement `assessChunk()` using `runStreamingCommand()` from `src/providers/stream.ts` — spawn one provider CLI per assessment, parse JSON rating from stdout
 - [ ] 31. Implement `assessChunks()` with parallel execution — launch up to `maxConcurrent` assessments simultaneously using `Promise.all()` with concurrency limiter
@@ -714,13 +714,13 @@ Each item below is an individual, atomic task. No grouping. Items are ordered by
 - [ ] 35. Define `ConsensusConfig` interface in `src/assessment/consensus.ts`
 - [ ] 36. Implement `computeConsensus()` — weighted average with optional outlier discarding (>2 stddev from mean)
 - [ ] 37. Write unit tests for consensus scorer covering normal case, outlier rejection, and minimum assessment threshold
-- [ ] 38. Create `src/distiller/` directory structure
-- [ ] 39. Define `DistillerConfig` and `DistilledSession` interfaces in `src/distiller/distiller.ts`
+- [x] 38. Create `src/distiller/` directory structure
+- [x] 39. Define `DistillerConfig` and `DistilledSession` interfaces in `src/distiller/distiller.ts`
 - [ ] 40. Implement `distill()` function — sort chunks by hybrid score (0.7 consensus + 0.3 recency), select top chunks within token budget
 - [ ] 41. Implement "hybrid" sort normalization — normalize consensus to 0-1 range, normalize recency (index/total) to 0-1 range, combine with weights
 - [ ] 42. Write unit tests for distiller covering token budget enforcement, sort modes, and minimum consensus filtering
-- [ ] 43. Create `src/output/` directory structure
-- [ ] 44. Define `SessionGenerator` interface in `src/output/index.ts`
+- [x] 43. Create `src/output/` directory structure
+- [x] 44. Define `SessionGenerator` interface in `src/output/index.ts`
 - [ ] 45. Implement Claude session generator in `src/output/claudeGenerator.ts` — emit JSONL with `compact_boundary` markers and `<system-reminder>` wrapped content
 - [ ] 46. Implement Codex session generator in `src/output/codexGenerator.ts` — emit Codex-format JSONL with `type: "context"` events
 - [ ] 47. Implement Gemini session generator in `src/output/geminiGenerator.ts` — emit Gemini-format JSON with `parts` array
@@ -733,13 +733,13 @@ Each item below is an individual, atomic task. No grouping. Items are ordered by
 - [ ] 54. Implement `flushSyncQueue()` to retry unsynced entries against ClaudeMem HTTP worker
 - [ ] 55. Implement `getSyncQueueSize()` for status reporting
 - [ ] 56. Write unit tests for defensive mem wrapper covering offline and online scenarios
-- [ ] 57. Create SQLite migration file `src/storage/distillMigrations.ts` with `chunks`, `assessments`, `external_sessions`, `chunk_fts`, and `_sync_queue` table creation
-- [ ] 58. Integrate migration into `SessionDb` constructor — call `runDistillMigrations()` after existing `ensureColumn` calls
-- [ ] 59. Write unit test for distill migrations — verify all 5 tables are created
-- [ ] 60. Add `importanceScore` optional column to `events` table via `ensureColumn` migration
-- [ ] 61. Add `chunkId` optional column to `events` table via `ensureColumn` migration
-- [ ] 62. Add `consensusScore` optional column to `events` table via `ensureColumn` migration
-- [ ] 63. Extend `CanonicalEventBase` in `src/session/types.ts` with `importanceScore`, `chunkId`, `assessmentScores`, `consensusScore`, `sourceSessionId`, `sourcePlatform`, `toolCalls` optional fields
+- [x] 57. Create SQLite migration file `src/storage/distillMigrations.ts` with `chunks`, `assessments`, `external_sessions`, `chunk_fts`, and `_sync_queue` table creation
+- [x] 58. Integrate migration into `SessionDb` constructor — call `runDistillMigrations()` after existing `ensureColumn` calls
+- [x] 59. Write unit test for distill migrations — verify all 5 tables are created
+- [x] 60. Add `importanceScore` optional column to `events` table via `ensureColumn` migration
+- [x] 61. Add `chunkId` optional column to `events` table via `ensureColumn` migration
+- [x] 62. Add `consensusScore` optional column to `events` table via `ensureColumn` migration
+- [x] 63. Extend `CanonicalEventBase` in `src/session/types.ts` with `importanceScore`, `chunkId`, `assessmentScores`, `consensusScore`, `sourceSessionId`, `sourcePlatform`, `toolCalls` optional fields
 - [ ] 64. Add distill command kinds to `Command` union type in `src/commands/parse.ts`
 - [ ] 65. Implement `:distill` command parser in `parseLine()` — handle `scan`, `run`, `seed`, `query`, `report`, `assess`, `status`, `watch` subcommands
 - [ ] 66. Write unit tests for `:distill` command parsing covering all 8 subcommands
