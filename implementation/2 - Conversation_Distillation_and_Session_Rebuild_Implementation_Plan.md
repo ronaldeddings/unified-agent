@@ -705,15 +705,15 @@ Each item below is an individual, atomic task. No grouping. Items are ordered by
 - [x] 26. Write unit tests for `buildChunks()` covering threshold filtering, token splitting, and overlap
 - [x] 27. Create `src/assessment/` directory structure
 - [x] 28. Define `AssessmentResult` and `AssessorConfig` interfaces in `src/assessment/assessor.ts`
-- [ ] 29. Implement structured assessment prompt template in `src/assessment/prompts.ts` — include chunk content, ask for 1-10 rating on relevance/signal-density/reusability, request JSON response
-- [ ] 30. Implement `assessChunk()` using `runStreamingCommand()` from `src/providers/stream.ts` — spawn one provider CLI per assessment, parse JSON rating from stdout
-- [ ] 31. Implement `assessChunks()` with parallel execution — launch up to `maxConcurrent` assessments simultaneously using `Promise.all()` with concurrency limiter
-- [ ] 32. Add timeout handling to assessment — abort provider subprocess after `timeoutMs`
-- [ ] 33. Add retry logic for failed assessments — one retry per provider per chunk
-- [ ] 34. Write unit tests for assessor using mock provider (returns deterministic scores)
-- [ ] 35. Define `ConsensusConfig` interface in `src/assessment/consensus.ts`
-- [ ] 36. Implement `computeConsensus()` — weighted average with optional outlier discarding (>2 stddev from mean)
-- [ ] 37. Write unit tests for consensus scorer covering normal case, outlier rejection, and minimum assessment threshold
+- [x] 29. Implement structured assessment prompt template in `src/assessment/prompts.ts` — include chunk content, ask for 1-10 rating on relevance/signal-density/reusability, request JSON response
+- [x] 30. Implement `assessChunk()` using `runStreamingCommand()` from `src/providers/stream.ts` — spawn one provider CLI per assessment, parse JSON rating from stdout
+- [x] 31. Implement `assessChunks()` with parallel execution — launch up to `maxConcurrent` assessments simultaneously using `Promise.all()` with concurrency limiter
+- [x] 32. Add timeout handling to assessment — abort provider subprocess after `timeoutMs`
+- [x] 33. Add retry logic for failed assessments — one retry per provider per chunk
+- [x] 34. Write unit tests for assessor using mock provider (returns deterministic scores)
+- [x] 35. Define `ConsensusConfig` interface in `src/assessment/consensus.ts`
+- [x] 36. Implement `computeConsensus()` — weighted average with optional outlier discarding (>2 stddev from mean)
+- [x] 37. Write unit tests for consensus scorer covering normal case, outlier rejection, and minimum assessment threshold
 - [x] 38. Create `src/distiller/` directory structure
 - [x] 39. Define `DistillerConfig` and `DistilledSession` interfaces in `src/distiller/distiller.ts`
 - [ ] 40. Implement `distill()` function — sort chunks by hybrid score (0.7 consensus + 0.3 recency), select top chunks within token budget
