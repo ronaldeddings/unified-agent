@@ -3,13 +3,7 @@
 One interactive terminal UX above Claude, Codex, and Gemini.
 
 <p align="center">
-  <strong>Without unified-agent</strong><br/><br/>
-  <img src="docs/without.svg" alt="Without unified-agent — the re-explain and retry loop" width="500" />
-</p>
-
-<p align="center">
-  <strong>With unified-agent</strong><br/><br/>
-  <img src="docs/with.svg" alt="With unified-agent — ask once, get it right the first try" width="500" />
+  <img src="docs/overview.svg" alt="unified-agent: one terminal, three AIs, perfect context" width="600" />
 </p>
 
 ## What This Is (MVP)
