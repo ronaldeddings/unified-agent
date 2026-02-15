@@ -716,18 +716,18 @@ Each item below is an individual, atomic task. No grouping. Items are ordered by
 - [x] 37. Write unit tests for consensus scorer covering normal case, outlier rejection, and minimum assessment threshold
 - [x] 38. Create `src/distiller/` directory structure
 - [x] 39. Define `DistillerConfig` and `DistilledSession` interfaces in `src/distiller/distiller.ts`
-- [ ] 40. Implement `distill()` function — sort chunks by hybrid score (0.7 consensus + 0.3 recency), select top chunks within token budget
-- [ ] 41. Implement "hybrid" sort normalization — normalize consensus to 0-1 range, normalize recency (index/total) to 0-1 range, combine with weights
-- [ ] 42. Write unit tests for distiller covering token budget enforcement, sort modes, and minimum consensus filtering
+- [x] 40. Implement `distill()` function — sort chunks by hybrid score (0.7 consensus + 0.3 recency), select top chunks within token budget
+- [x] 41. Implement "hybrid" sort normalization — normalize consensus to 0-1 range, normalize recency (index/total) to 0-1 range, combine with weights
+- [x] 42. Write unit tests for distiller covering token budget enforcement, sort modes, and minimum consensus filtering
 - [x] 43. Create `src/output/` directory structure
 - [x] 44. Define `SessionGenerator` interface in `src/output/index.ts`
-- [ ] 45. Implement Claude session generator in `src/output/claudeGenerator.ts` — emit JSONL with `compact_boundary` markers and `<system-reminder>` wrapped content
-- [ ] 46. Implement Codex session generator in `src/output/codexGenerator.ts` — emit Codex-format JSONL with `type: "context"` events
-- [ ] 47. Implement Gemini session generator in `src/output/geminiGenerator.ts` — emit Gemini-format JSON with `parts` array
-- [ ] 48. Implement generator factory in `src/output/index.ts` — `getGenerator(platform)` returns correct generator
-- [ ] 49. Write unit tests for Claude generator verifying `compact_boundary` format
-- [ ] 50. Write unit tests for Codex generator verifying JSONL format
-- [ ] 51. Write unit tests for Gemini generator verifying JSON format
+- [x] 45. Implement Claude session generator in `src/output/claudeGenerator.ts` — emit JSONL with `compact_boundary` markers and `<system-reminder>` wrapped content
+- [x] 46. Implement Codex session generator in `src/output/codexGenerator.ts` — emit Codex-format JSONL with `type: "context"` events
+- [x] 47. Implement Gemini session generator in `src/output/geminiGenerator.ts` — emit Gemini-format JSON with `parts` array
+- [x] 48. Implement generator factory in `src/output/index.ts` — `getGenerator(platform)` returns correct generator
+- [x] 49. Write unit tests for Claude generator verifying `compact_boundary` format
+- [x] 50. Write unit tests for Codex generator verifying JSONL format
+- [x] 51. Write unit tests for Gemini generator verifying JSON format
 - [ ] 52. Implement `DefensiveClaudeMemClient` in `src/memory/defensiveMem.ts`
 - [ ] 53. Implement `storeObservation()` with write-local-first to `_sync_queue` table
 - [ ] 54. Implement `flushSyncQueue()` to retry unsynced entries against ClaudeMem HTTP worker

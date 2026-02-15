@@ -1,10 +1,12 @@
 /**
  * Session generator interface and factory.
  * Each generator transforms a DistilledSession into a platform-native format.
- * Implementation will be added in Phase 5.
  */
 
 import type { DistilledSession } from "../distiller/distiller.ts";
+import { claudeGenerator } from "./claudeGenerator.ts";
+import { codexGenerator } from "./codexGenerator.ts";
+import { geminiGenerator } from "./geminiGenerator.ts";
 
 export type OutputPlatform = "claude" | "codex" | "gemini";
 
@@ -13,10 +15,20 @@ export interface SessionGenerator {
   generate(distilled: DistilledSession, outputPath: string): Promise<string>;
 }
 
+const generators: Record<OutputPlatform, SessionGenerator> = {
+  claude: claudeGenerator,
+  codex: codexGenerator,
+  gemini: geminiGenerator,
+};
+
 /**
  * Factory: returns the correct generator for the target platform.
- * Implementation in Phase 5.
+ * Throws if an unsupported platform is provided.
  */
-export function getGenerator(_platform: OutputPlatform): SessionGenerator {
-  throw new Error("getGenerator() not yet implemented — Phase 5");
+export function getGenerator(platform: OutputPlatform): SessionGenerator {
+  const generator = generators[platform];
+  if (!generator) {
+    throw new Error(`Unsupported output platform: ${platform}`);
+  }
+  return generator;
 }
