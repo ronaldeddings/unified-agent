@@ -680,18 +680,18 @@ Each item below is an individual, atomic task. No grouping. Items are ordered by
 - [x] 1. Create `src/parsers/` directory structure
 - [x] 2. Define `ParsedEvent` interface in `src/parsers/types.ts`
 - [x] 3. Define `SessionParser` interface in `src/parsers/types.ts`
-- [ ] 4. Implement Claude JSONL parser in `src/parsers/claudeParser.ts` — handle `type: "assistant"` with `message.content` text blocks, `type: "user"` with `tool_result`, `type: "system"`, and `tool_use` extraction
-- [ ] 5. Implement Codex JSONL parser in `src/parsers/codexParser.ts` — handle `type: "item.completed"` with `command_execution` and `reasoning`, `type: "turn.completed"` for usage
-- [ ] 6. Implement Gemini JSON parser in `src/parsers/geminiParser.ts` — handle `type: "message"` with `role: "assistant"`, `type: "tool_call"`, `type: "tool_use"`, `type: "tool_result"`
-- [ ] 7. Implement parser auto-detection in `src/parsers/index.ts` — check file extension (`.jsonl` vs `.json`) and first-line structure heuristics
-- [ ] 8. Write unit tests for Claude JSONL parser with sample session data
-- [ ] 9. Write unit tests for Codex JSONL parser with sample session data
-- [ ] 10. Write unit tests for Gemini JSON parser with sample session data
-- [ ] 11. Write unit tests for parser auto-detection across all three formats
+- [x] 4. Implement Claude JSONL parser in `src/parsers/claudeParser.ts` — handle `type: "assistant"` with `message.content` text blocks, `type: "user"` with `tool_result`, `type: "system"`, and `tool_use` extraction
+- [x] 5. Implement Codex JSONL parser in `src/parsers/codexParser.ts` — handle `type: "item.completed"` with `command_execution` and `reasoning`, `type: "turn.completed"` for usage
+- [x] 6. Implement Gemini JSON parser in `src/parsers/geminiParser.ts` — handle `type: "message"` with `role: "assistant"`, `type: "tool_call"`, `type: "tool_use"`, `type: "tool_result"`
+- [x] 7. Implement parser auto-detection in `src/parsers/index.ts` — check file extension (`.jsonl` vs `.json`) and first-line structure heuristics
+- [x] 8. Write unit tests for Claude JSONL parser with sample session data
+- [x] 9. Write unit tests for Codex JSONL parser with sample session data
+- [x] 10. Write unit tests for Gemini JSON parser with sample session data
+- [x] 11. Write unit tests for parser auto-detection across all three formats
 - [x] 12. Create `src/scanner/` directory structure
 - [x] 13. Define `ScannedSession` interface and `PLATFORM_SESSION_PATHS` in `src/scanner/paths.ts`
-- [ ] 14. Implement session scanner in `src/scanner/scanner.ts` — glob each platform path, resolve `~`, return sorted `ScannedSession[]`
-- [ ] 15. Write unit test for scanner with mocked filesystem paths
+- [x] 14. Implement session scanner in `src/scanner/scanner.ts` — glob each platform path, resolve `~`, return sorted `ScannedSession[]`
+- [x] 15. Write unit test for scanner with mocked filesystem paths
 - [x] 16. Create `src/scoring/` directory structure
 - [x] 17. Define `ScoringConfig` interface in `src/scoring/importance.ts`
 - [ ] 18. Implement `scoreEvent()` function with base score + bonus system (toolUse: +15, error: +20, userPrompt: +10, codeBlock: +10, fileEdit: +12, longContent: -5, systemEvent: -20, hookEvent: -15)
