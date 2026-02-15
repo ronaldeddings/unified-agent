@@ -2,16 +2,9 @@
 
 One interactive terminal UX above Claude, Codex, and Gemini.
 
-```mermaid
-graph TD
-    SESSIONS["📥 Sessions<br/>Claude · Codex · Gemini"] --> SCAN["Scan & Parse"]
-    SCAN --> SCORE["Score & Chunk"]
-    SCORE --> ASSESS
-    Q["❓ Your Question"] --> ASSESS["🤖 Multi-Model Assess<br/>3 providers in parallel"]
-    MEM["🧠 ClaudeMem"] -.->|semantic search| ASSESS
-    ASSESS --> CONSENSUS["Consensus & Distill<br/>80K token budget"]
-    CONSENSUS --> OUTPUT["📄 Ready-to-Use Session<br/>.jsonl · .json"]
-```
+<p align="center">
+  <img src="docs/pipeline.svg" alt="Distillation Pipeline" width="600" />
+</p>
 
 ## What This Is (MVP)
 
