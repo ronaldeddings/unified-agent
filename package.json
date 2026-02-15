@@ -14,6 +14,7 @@
     "smoke:adapter:gemini": "bun run scripts/adapter-smoke-gemini.ts",
     "verify:e2e": "bun run scripts/e2e-user-flows.ts",
     "migrate:remote": "bun run scripts/migrate-remote-metadata.ts",
+    "smoke:distill": "bun run scripts/smoke-distill.ts",
     "test": "bun test"
   }
 }

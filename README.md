@@ -159,7 +159,63 @@ bun run smoke:adapter:gemini
 - `:mem search <query>`
 - `:mem stats`
 - `:mem note <text>`
+- `:distill scan` (discover sessions across Claude, Codex, Gemini)
+- `:distill run [sessionId...] [--providers p1,p2]` (full distillation pipeline)
+- `:distill seed claude|codex|gemini [sessionId]` (generate platform-native session file)
+- `:distill ask "question" [--platform claude|codex|gemini] [--providers p1,p2]` (question-driven distillation)
+- `:distill query <text>` (search chunk FTS index)
+- `:distill report [sessionId]` (session statistics)
+- `:distill assess [chunkId]` (trigger multi-agent assessment on a chunk)
+- `:distill status` (pipeline state: sync queue, assessments, last run)
+- `:distill watch on|off` (toggle background file watcher)
 - `:quit`
+
+## Conversation Distillation
+
+The distillation pipeline ingests session files from Claude Code, Codex CLI, and Gemini CLI, scores events by importance, chunks them for multi-agent assessment, and generates platform-native session files for seeding new conversations.
+
+### Pipeline
+
+1. **Scan** — discovers session files across platform-specific directories
+2. **Parse** — reads each format (Claude JSONL, Codex JSONL, Gemini JSON) into normalized `ParsedEvent` objects
+3. **Score** — assigns 0-100 importance scores based on event characteristics
+4. **Chunk** — groups scored events into assessment-ready windows with overlap
+5. **Assess** — runs multi-agent assessment: each provider CLI rates chunks independently
+6. **Consensus** — computes weighted average with outlier rejection
+7. **Distill** — selects highest-value chunks within token budget (hybrid sort: 0.7 consensus + 0.3 recency)
+8. **Generate** — emits platform-native output (Claude JSONL, Codex JSONL, Gemini JSON)
+
+### Real-Time Scoring
+
+When `UNIFIED_AGENT_DISTILL_ENABLED=1`, every event recorded through the REPL is scored inline before persistence. This adds <1ms latency per event.
+
+### Defensive Memory
+
+The `DefensiveClaudeMemClient` wraps the ClaudeMem HTTP worker with write-local-first semantics. Observations are stored in a local SQLite `_sync_queue` table and synced to ClaudeMem when available. Queue flush runs every 60 seconds.
+
+### Background Watcher
+
+When enabled via `:distill watch on`, polls session directories every 5 seconds for new files and triggers scoring automatically.
+
+### Distillation Smoke Test
+
+```bash
+bun run smoke:distill
+```
+
+### Environment Variables
+
+| Variable | Default | Purpose |
+|---|---|---|
+| `UNIFIED_AGENT_DISTILL_ENABLED` | `0` | Enable real-time scoring on session events |
+| `UNIFIED_AGENT_DISTILL_WATCH` | `0` | Enable background file watcher at startup |
+| `UNIFIED_AGENT_DISTILL_PROVIDERS` | `claude,codex,gemini` | Providers for multi-agent assessment |
+| `UNIFIED_AGENT_DISTILL_TOKEN_BUDGET` | `80000` | Max tokens in distilled output |
+| `UNIFIED_AGENT_DISTILL_MIN_CONSENSUS` | `5.0` | Minimum consensus score to include chunk |
+| `UNIFIED_AGENT_DISTILL_ASSESSMENT_TIMEOUT_MS` | `30000` | Per-assessment timeout |
+| `UNIFIED_AGENT_DISTILL_MAX_CONCURRENT` | `3` | Max parallel assessments |
+| `UNIFIED_AGENT_DISTILL_SYNC_INTERVAL_MS` | `60000` | ClaudeMem sync queue flush interval |
+| `UNIFIED_AGENT_DISTILL_SORT_MODE` | `hybrid` | Sort mode: consensus, chronological, hybrid |
 
 ## Data Locations
 

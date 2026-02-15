@@ -755,17 +755,17 @@ Each item below is an individual, atomic task. No grouping. Items are ordered by
 - [x] 76. Implement backpressure-aware assessment queue — don't spawn new assessments if more than `maxConcurrent` are in flight
 - [x] 77. Add distillation counters to `GatewayMetrics` — `distill_scans_total`, `distill_runs_total`, `distill_chunks_assessed`, `distill_sessions_generated`
 - [x] 78. Add `:distill` to `:help` output in REPL
-- [ ] 79. Update `README.md` with distillation commands documentation
-- [ ] 80. Update `TODO.md` with distillation feature status
-- [ ] 81. Add `bun run smoke:distill` script to `package.json` for distillation smoke test
-- [ ] 82. Implement distillation smoke test in `scripts/smoke-distill.ts` — scan → parse → score → chunk → verify pipeline runs end-to-end with mock data
-- [ ] 83. Add integration test: ingest a real Claude JSONL session, run full pipeline, verify output file is valid Claude-format JSONL
-- [ ] 84. Add integration test: ingest a real Codex JSONL session, run full pipeline, verify output file is valid Codex-format JSONL
-- [ ] 85. Add integration test: ingest a real Gemini JSON session, run full pipeline, verify output file is valid Gemini-format JSON
-- [ ] 86. Add integration test: cross-platform — ingest Claude session, generate Gemini output, verify format
-- [ ] 87. Add integration test: real-time scoring — send 10 events through wrapped SessionManager, verify all have `importanceScore` attached
-- [ ] 88. Add integration test: defensive mem — store 5 observations with ClaudeMem offline, verify sync queue has 5 entries, flush after online, verify queue is empty
-- [ ] 89. Add integration test: background watcher — create a test session file, verify watcher detects it and triggers scoring
+- [x] 79. Update `README.md` with distillation commands documentation
+- [x] 80. Update `TODO.md` with distillation feature status
+- [x] 81. Add `bun run smoke:distill` script to `package.json` for distillation smoke test
+- [x] 82. Implement distillation smoke test in `scripts/smoke-distill.ts` — scan → parse → score → chunk → verify pipeline runs end-to-end with mock data
+- [x] 83. Add integration test: ingest a real Claude JSONL session, run full pipeline, verify output file is valid Claude-format JSONL
+- [x] 84. Add integration test: ingest a real Codex JSONL session, run full pipeline, verify output file is valid Codex-format JSONL
+- [x] 85. Add integration test: ingest a real Gemini JSON session, run full pipeline, verify output file is valid Gemini-format JSON
+- [x] 86. Add integration test: cross-platform — ingest Claude session, generate Gemini output, verify format
+- [x] 87. Add integration test: real-time scoring — send 10 events through wrapped SessionManager, verify all have `importanceScore` attached
+- [x] 88. Add integration test: defensive mem — store 5 observations with ClaudeMem offline, verify sync queue has 5 entries, flush after online, verify queue is empty
+- [x] 89. Add integration test: background watcher — create a test session file, verify watcher detects it and triggers scoring
 - [x] 90. Wire real-time scoring into `runRepl()` — wrap SessionManager before entering REPL loop
 - [x] 91. Wire defensive mem into `runRepl()` — replace direct ClaudeMemClient with DefensiveClaudeMemClient
 - [x] 92. Add periodic sync queue flush to REPL event loop (every 60 seconds)
