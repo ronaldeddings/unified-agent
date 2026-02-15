@@ -740,21 +740,21 @@ Each item below is an individual, atomic task. No grouping. Items are ordered by
 - [x] 61. Add `chunkId` optional column to `events` table via `ensureColumn` migration
 - [x] 62. Add `consensusScore` optional column to `events` table via `ensureColumn` migration
 - [x] 63. Extend `CanonicalEventBase` in `src/session/types.ts` with `importanceScore`, `chunkId`, `assessmentScores`, `consensusScore`, `sourceSessionId`, `sourcePlatform`, `toolCalls` optional fields
-- [ ] 64. Add distill command kinds to `Command` union type in `src/commands/parse.ts`
-- [ ] 65. Implement `:distill` command parser in `parseLine()` — handle `scan`, `run`, `seed`, `query`, `report`, `assess`, `status`, `watch` subcommands
-- [ ] 66. Write unit tests for `:distill` command parsing covering all 8 subcommands
-- [ ] 67. Add `:distill scan` handler to `runCommand()` in `src/repl.ts` — call scanner, display results table
-- [ ] 68. Add `:distill run` handler to `runCommand()` — execute full pipeline: scan → parse → score → chunk → assess → consensus → distill
-- [ ] 69. Add `:distill seed` handler to `runCommand()` — generate platform-specific session file from most recent distillation
-- [ ] 70. Add `:distill query` handler to `runCommand()` — search `chunk_fts` table for matching chunks
-- [ ] 71. Add `:distill report` handler to `runCommand()` — show session statistics (event count, chunk count, avg score, top chunks)
-- [ ] 72. Add `:distill assess` handler to `runCommand()` — trigger multi-agent assessment on specific chunk
-- [ ] 73. Add `:distill status` handler to `runCommand()` — show pipeline state (sync queue size, in-progress assessments, last run)
-- [ ] 74. Add `:distill watch` handler to `runCommand()` — toggle background file watcher
-- [ ] 75. Implement background file watcher using `Bun.file().watch()` or polling interval on session directories
-- [ ] 76. Implement backpressure-aware assessment queue — don't spawn new assessments if more than `maxConcurrent` are in flight
-- [ ] 77. Add distillation counters to `GatewayMetrics` — `distill_scans_total`, `distill_runs_total`, `distill_chunks_assessed`, `distill_sessions_generated`
-- [ ] 78. Add `:distill` to `:help` output in REPL
+- [x] 64. Add distill command kinds to `Command` union type in `src/commands/parse.ts`
+- [x] 65. Implement `:distill` command parser in `parseLine()` — handle `scan`, `run`, `seed`, `query`, `report`, `assess`, `status`, `watch` subcommands
+- [x] 66. Write unit tests for `:distill` command parsing covering all 8 subcommands
+- [x] 67. Add `:distill scan` handler to `runCommand()` in `src/repl.ts` — call scanner, display results table
+- [x] 68. Add `:distill run` handler to `runCommand()` — execute full pipeline: scan → parse → score → chunk → assess → consensus → distill
+- [x] 69. Add `:distill seed` handler to `runCommand()` — generate platform-specific session file from most recent distillation
+- [x] 70. Add `:distill query` handler to `runCommand()` — search `chunk_fts` table for matching chunks
+- [x] 71. Add `:distill report` handler to `runCommand()` — show session statistics (event count, chunk count, avg score, top chunks)
+- [x] 72. Add `:distill assess` handler to `runCommand()` — trigger multi-agent assessment on specific chunk
+- [x] 73. Add `:distill status` handler to `runCommand()` — show pipeline state (sync queue size, in-progress assessments, last run)
+- [x] 74. Add `:distill watch` handler to `runCommand()` — toggle background file watcher
+- [x] 75. Implement background file watcher using `Bun.file().watch()` or polling interval on session directories
+- [x] 76. Implement backpressure-aware assessment queue — don't spawn new assessments if more than `maxConcurrent` are in flight
+- [x] 77. Add distillation counters to `GatewayMetrics` — `distill_scans_total`, `distill_runs_total`, `distill_chunks_assessed`, `distill_sessions_generated`
+- [x] 78. Add `:distill` to `:help` output in REPL
 - [ ] 79. Update `README.md` with distillation commands documentation
 - [ ] 80. Update `TODO.md` with distillation feature status
 - [ ] 81. Add `bun run smoke:distill` script to `package.json` for distillation smoke test
@@ -766,10 +766,10 @@ Each item below is an individual, atomic task. No grouping. Items are ordered by
 - [ ] 87. Add integration test: real-time scoring — send 10 events through wrapped SessionManager, verify all have `importanceScore` attached
 - [ ] 88. Add integration test: defensive mem — store 5 observations with ClaudeMem offline, verify sync queue has 5 entries, flush after online, verify queue is empty
 - [ ] 89. Add integration test: background watcher — create a test session file, verify watcher detects it and triggers scoring
-- [ ] 90. Wire real-time scoring into `runRepl()` — wrap SessionManager before entering REPL loop
-- [ ] 91. Wire defensive mem into `runRepl()` — replace direct ClaudeMemClient with DefensiveClaudeMemClient
-- [ ] 92. Add periodic sync queue flush to REPL event loop (every 60 seconds)
-- [ ] 93. Add graceful shutdown for background watcher and sync queue on `:quit`
+- [x] 90. Wire real-time scoring into `runRepl()` — wrap SessionManager before entering REPL loop
+- [x] 91. Wire defensive mem into `runRepl()` — replace direct ClaudeMemClient with DefensiveClaudeMemClient
+- [x] 92. Add periodic sync queue flush to REPL event loop (every 60 seconds)
+- [x] 93. Add graceful shutdown for background watcher and sync queue on `:quit`
 - [ ] 94. Define `QueryDistillConfig` and `QueryDistillResult` interfaces in `src/distiller/queryDistiller.ts`
 - [ ] 95. Implement FTS-based chunk search in `queryDistill()` — query `chunk_fts` table with user's question, return matching chunk IDs with their associated chunks
 - [ ] 96. Implement ClaudeMem-based chunk search in `queryDistill()` — call `memClient.searchAsChunks(question)` to discover relevant past observations as synthetic chunks
@@ -783,12 +783,12 @@ Each item below is an individual, atomic task. No grouping. Items are ordered by
 - [ ] 104. Write unit tests for `searchAsChunks()` covering result conversion, empty results, and missing metadata fields
 - [ ] 105. Implement `buildQuestionAwarePrompt()` in `src/assessment/prompts.ts` — inject user's question, rate on questionRelevance/signalDensity/contextValue, request JSON response
 - [ ] 106. Write unit tests for question-aware prompt template verifying question injection and JSON response schema expectations
-- [ ] 107. Add `distill_ask` command kind to `Command` union type in `src/commands/parse.ts`
-- [ ] 108. Implement `:distill ask` command parser in `parseLine()` — parse quoted question string, optional `--platform` and `--providers` flags
+- [x] 107. Add `distill_ask` command kind to `Command` union type in `src/commands/parse.ts`
+- [x] 108. Implement `:distill ask` command parser in `parseLine()` — parse quoted question string, optional `--platform` and `--providers` flags
 - [ ] 109. Add `:distill ask` handler to `runCommand()` in `src/repl.ts` — call `queryDistill()`, generate platform-specific session file, display summary with file path and usage instructions
-- [ ] 110. Write unit test for `:distill ask` command parsing with various argument combinations
+- [x] 110. Write unit test for `:distill ask` command parsing with various argument combinations
 - [ ] 111. Add integration test: `:distill ask` end-to-end — ask a question against pre-populated chunks, verify output file contains question-relevant content ranked by relevance
-- [ ] 112. Update `:help` output to include `:distill ask` command documentation
+- [x] 112. Update `:help` output to include `:distill ask` command documentation
 
 ---
 

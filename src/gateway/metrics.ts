@@ -73,6 +73,25 @@ export class GatewayMetrics {
     this.incCounter("unsupported_subtype_total", { provider, subtype });
   }
 
+  // Distillation counters
+  distillScans(): void {
+    this.incCounter("distill_scans_total");
+  }
+
+  distillRuns(): void {
+    this.incCounter("distill_runs_total");
+  }
+
+  distillChunksAssessed(count: number = 1): void {
+    for (let i = 0; i < count; i++) {
+      this.incCounter("distill_chunks_assessed");
+    }
+  }
+
+  distillSessionsGenerated(platform: string): void {
+    this.incCounter("distill_sessions_generated", { platform });
+  }
+
   toPrometheus(): string {
     const lines: string[] = [];
     lines.push("# HELP unified_agent_gateway_counter Generic gateway counters");

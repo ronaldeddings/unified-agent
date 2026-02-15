@@ -15,6 +15,11 @@ export class SessionDb {
     this.ensureSchema();
   }
 
+  /** Expose raw bun:sqlite Database for modules that need direct access (e.g. DefensiveClaudeMemClient). */
+  getDb(): Database {
+    return this.db;
+  }
+
   close(): void {
     this.db.close();
   }

@@ -12,6 +12,11 @@ export class SessionManager {
     this.db = db;
   }
 
+  /** Expose the underlying SessionDb for modules requiring direct access. */
+  getSessionDb(): SessionDb {
+    return this.db;
+  }
+
   close(): void {
     this.db.close();
   }

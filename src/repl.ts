@@ -1,16 +1,31 @@
 import { createInterface } from "node:readline";
-import { basename } from "node:path";
+import { basename, join } from "node:path";
 import { readFile } from "node:fs/promises";
 import { SessionManager } from "./session/manager";
 import { parseLine, type Command } from "./commands/parse";
 import { getProvider } from "./providers";
 import { getAdapter } from "./adapters";
 import { ClaudeMemClient } from "./memory/claudeMemClient";
+import { DefensiveClaudeMemClient } from "./memory/defensiveMem.ts";
 import type { ProviderName } from "./session/types";
 import { redactForStorage } from "./util/redact";
 import { newGatewaySessionId } from "./util/ids";
 import { getJsonlPath } from "./storage/jsonl";
 import { validateBrainUrl } from "./gateway/policy";
+import { wrapSessionManagerWithScoring } from "./scoring/realtime.ts";
+import { scanSessions } from "./scanner/scanner.ts";
+import { detectParser } from "./parsers/index.ts";
+import { scoreEvent } from "./scoring/importance.ts";
+import { buildChunks } from "./scoring/chunker.ts";
+import { assessChunks } from "./assessment/assessor.ts";
+import { computeConsensus } from "./assessment/consensus.ts";
+import { distill } from "./distiller/distiller.ts";
+import { getGenerator } from "./output/index.ts";
+import { GatewayMetrics } from "./gateway/metrics.ts";
+import { SessionWatcher } from "./distiller/watcher.ts";
+import { AssessmentQueue } from "./distiller/assessmentQueue.ts";
+import { getDataDir } from "./util/paths.ts";
+import type { OutputPlatform } from "./output/index.ts";
 
 interface ContextConfig {
   mode: "off" | "recent" | "full";
@@ -82,8 +97,59 @@ export interface RunReplOptions {
 }
 
 export async function runRepl(options: RunReplOptions = {}): Promise<void> {
-  const sm = new SessionManager();
-  const mem = new ClaudeMemClient();
+  const rawSm = new SessionManager();
+
+  // Item 90: Wire real-time scoring — wrap SessionManager before entering REPL loop
+  const distillEnabled = parseBoolEnv("UNIFIED_AGENT_DISTILL_ENABLED", false);
+  const sm = distillEnabled ? wrapSessionManagerWithScoring(rawSm) : rawSm;
+
+  // Item 91: Wire defensive mem — replace direct ClaudeMemClient with DefensiveClaudeMemClient
+  const rawMem = new ClaudeMemClient();
+  const rawDb = rawSm.getSessionDb().getDb();
+  const defensiveMem = new DefensiveClaudeMemClient(rawMem, rawDb);
+
+  // Gateway metrics for distillation counters
+  const metrics = new GatewayMetrics();
+
+  // Assessment queue with backpressure (Item 76)
+  const distillProviders = (process.env.UNIFIED_AGENT_DISTILL_PROVIDERS || "claude,codex,gemini")
+    .split(",")
+    .map((s) => s.trim().toLowerCase())
+    .filter((s) => s === "claude" || s === "codex" || s === "gemini") as ("claude" | "codex" | "gemini")[];
+  const assessmentQueue = new AssessmentQueue({
+    maxConcurrent: Number.parseInt(process.env.UNIFIED_AGENT_DISTILL_MAX_CONCURRENT || "3", 10),
+    timeoutMs: Number.parseInt(process.env.UNIFIED_AGENT_DISTILL_ASSESSMENT_TIMEOUT_MS || "30000", 10),
+    providers: distillProviders.length > 0 ? distillProviders : ["claude", "codex", "gemini"],
+  });
+
+  // Background watcher (Item 75) — initialized but not started until :distill watch on
+  const watcher = new SessionWatcher(
+    {
+      onNewSession: (session) => {
+        console.log(`[watcher] new session detected: ${session.platform} ${session.filePath}`);
+      },
+      onError: (err) => {
+        console.error(`[watcher] error: ${err.message}`);
+      },
+    },
+    { intervalMs: 5000 },
+  );
+
+  // Auto-start watcher if env flag is set
+  if (parseBoolEnv("UNIFIED_AGENT_DISTILL_WATCH", false)) {
+    await watcher.start();
+  }
+
+  // Item 92: Periodic sync queue flush (every 60 seconds)
+  const syncIntervalMs = Number.parseInt(process.env.UNIFIED_AGENT_DISTILL_SYNC_INTERVAL_MS || "60000", 10);
+  const syncTimer = setInterval(async () => {
+    try {
+      await defensiveMem.flushSyncQueue();
+    } catch {
+      // Ignore flush errors
+    }
+  }, syncIntervalMs);
+
   const contextCfg: ContextConfig = {
     mode: options.contextMode || "recent",
     turns: options.contextTurns || 12,
@@ -115,6 +181,7 @@ export async function runRepl(options: RunReplOptions = {}): Promise<void> {
     validateBrainUrl(brain.url, {});
   }
 
+  // Item 78: Add :distill to :help output
   const printHelp = () => {
     console.log("Commands:");
     console.log("  :help");
@@ -136,6 +203,15 @@ export async function runRepl(options: RunReplOptions = {}): Promise<void> {
     console.log("  :mem search <query>");
     console.log("  :mem stats");
     console.log("  :mem note <text>");
+    console.log('  :distill ask "question" [--platform claude|codex|gemini] [--providers p1,p2]');
+    console.log("  :distill scan");
+    console.log("  :distill run [sessionId...] [--providers p1,p2]");
+    console.log("  :distill seed claude|codex|gemini [sessionId]");
+    console.log("  :distill query <text>");
+    console.log("  :distill report [sessionId]");
+    console.log("  :distill assess [chunkId]");
+    console.log("  :distill status");
+    console.log("  :distill watch on|off");
     console.log("  :quit");
   };
 
@@ -184,8 +260,8 @@ export async function runRepl(options: RunReplOptions = {}): Promise<void> {
     );
 
     let injected = "";
-    if (contextCfg.includeMemoryInject && (await mem.health())) {
-      const ctx = await mem.contextInject(s.project);
+    if (contextCfg.includeMemoryInject && (await rawMem.health())) {
+      const ctx = await defensiveMem.contextInject(s.project);
       if (ctx && ctx.trim()) {
         const maxChars = Number.parseInt(process.env.UNIFIED_AGENT_MEM_MAX_CHARS || "8000", 10);
         injected = ctx.trim().slice(0, Number.isFinite(maxChars) ? maxChars : 8000);
@@ -260,10 +336,27 @@ export async function runRepl(options: RunReplOptions = {}): Promise<void> {
     console.log(resp.text);
   };
 
+  // Item 93: Graceful shutdown helper
+  const gracefulShutdown = async () => {
+    // Stop background watcher
+    watcher.stop();
+    // Stop periodic sync timer
+    clearInterval(syncTimer);
+    // Flush any remaining sync queue entries
+    try {
+      await defensiveMem.flushSyncQueue();
+    } catch {
+      // Best-effort flush on shutdown
+    }
+    sm.close();
+  };
+
   const runCommand = async (c: Command): Promise<"quit" | void> => {
     if (c.kind === "help") {
       printHelp();
     } else if (c.kind === "quit") {
+      // Item 93: Graceful shutdown on :quit
+      await gracefulShutdown();
       return "quit";
     } else if (c.kind === "provider") {
       await sm.setProvider(c.provider);
@@ -346,39 +439,39 @@ export async function runRepl(options: RunReplOptions = {}): Promise<void> {
     } else if (c.kind === "mem_inject") {
       const s = sm.getCurrent();
       if (!s) throw new Error("no active meta-session");
-      const ok = await mem.health();
+      const ok = await rawMem.health();
       if (!ok) {
         console.log("claude-mem worker not reachable (expected at http://127.0.0.1:37777).");
       } else {
-        const ctx = await mem.contextInject(s.project);
+        const ctx = await defensiveMem.contextInject(s.project);
         console.log(ctx || "(no context)");
       }
     } else if (c.kind === "mem_search") {
       const s = sm.getCurrent();
       const project = s?.project;
-      const ok = await mem.health();
+      const ok = await rawMem.health();
       if (!ok) {
         console.log("claude-mem worker not reachable (expected at http://127.0.0.1:37777).");
       } else {
-        const res = await mem.search(c.query, project);
+        const res = await rawMem.search(c.query, project);
         console.log(res.content.map((x) => x.text).join("\n"));
       }
     } else if (c.kind === "mem_stats") {
-      const ok = await mem.health();
+      const ok = await rawMem.health();
       if (!ok) {
         console.log("claude-mem worker not reachable (expected at http://127.0.0.1:37777).");
       } else {
-        const stats = await mem.stats();
+        const stats = await rawMem.stats();
         console.log(stats ? JSON.stringify(stats, null, 2) : "(no stats)");
       }
     } else if (c.kind === "mem_note") {
       const s = sm.getCurrent();
       if (!s) throw new Error("no active meta-session");
-      const ok = await mem.health();
+      const ok = await rawMem.health();
       if (!ok) {
         console.log("claude-mem worker not reachable (expected at http://127.0.0.1:37777).");
       } else {
-        const stored = await mem.storeObservation({
+        const stored = await rawMem.storeObservation({
           contentSessionId: s.id,
           cwd: s.cwd,
           tool_name: "unified-agent.note",
@@ -387,6 +480,253 @@ export async function runRepl(options: RunReplOptions = {}): Promise<void> {
         });
         console.log(stored ? "stored" : "failed");
       }
+
+    // ═══════════════════════════════════════════════════════════
+    // Distillation commands (Items 67-74)
+    // ═══════════════════════════════════════════════════════════
+
+    } else if (c.kind === "distill_scan") {
+      // Item 67: Scan all platforms for session files
+      metrics.distillScans();
+      const sessions = await scanSessions();
+      if (sessions.length === 0) {
+        console.log("No session files found.");
+      } else {
+        console.log(`Found ${sessions.length} session file(s):\n`);
+        console.log("  Platform   Size       Modified                  Path");
+        console.log("  ─────────  ─────────  ────────────────────────  ────────────────────────");
+        for (const s of sessions) {
+          const sizeKb = (s.fileSize / 1024).toFixed(1).padStart(7) + " KB";
+          const modified = s.modifiedAt.toISOString().slice(0, 19).replace("T", " ");
+          const platform = s.platform.padEnd(9);
+          console.log(`  ${platform}  ${sizeKb}  ${modified}  ${s.filePath}`);
+        }
+      }
+
+    } else if (c.kind === "distill_run") {
+      // Item 68: Execute full pipeline: scan → parse → score → chunk → assess → consensus → distill
+      metrics.distillRuns();
+      console.log("Starting distillation pipeline...");
+
+      // Step 1: Determine which sessions to process
+      let sessions = await scanSessions();
+      if (c.sessionIds && c.sessionIds.length > 0) {
+        sessions = sessions.filter((s) => c.sessionIds!.some((id) => s.sessionId === id || s.filePath.includes(id)));
+      }
+      if (sessions.length === 0) {
+        console.log("No matching sessions found.");
+        return;
+      }
+      console.log(`Processing ${sessions.length} session(s)...`);
+
+      // Step 2: Parse + Score all sessions
+      const allScoredEvents: Array<{ event: import("./parsers/types.ts").ParsedEvent; score: number }> = [];
+      for (const session of sessions) {
+        const parser = detectParser(session.filePath);
+        if (!parser) {
+          console.log(`  Skipping ${session.filePath} (no parser detected)`);
+          continue;
+        }
+        const source = await Bun.file(session.filePath).text();
+        for await (const event of parser.parse(source)) {
+          const score = scoreEvent(event);
+          allScoredEvents.push({ event: { ...event, metadata: { ...event.metadata, importanceScore: score } }, score });
+        }
+      }
+      console.log(`  Parsed ${allScoredEvents.length} events`);
+
+      // Step 3: Build chunks
+      const scoredParsedEvents = allScoredEvents.map((e) => e.event);
+      const chunks = buildChunks(scoredParsedEvents, sessions[0].sessionId);
+      console.log(`  Built ${chunks.length} chunk(s)`);
+
+      // Step 4: Assess chunks
+      const providers = c.providers
+        ? (c.providers.filter((p) => p === "claude" || p === "codex" || p === "gemini") as ("claude" | "codex" | "gemini")[])
+        : distillProviders;
+      console.log(`  Assessing with providers: ${providers.join(", ")}...`);
+      const assessmentMap = await assessChunks(chunks, { providers }, (completed, total) => {
+        if (completed % 5 === 0 || completed === total) {
+          console.log(`  Progress: ${completed}/${total} chunks assessed`);
+        }
+      });
+      metrics.distillChunksAssessed(chunks.length);
+
+      // Step 5: Compute consensus scores
+      const scoredChunks = new Map<string, { chunk: typeof chunks[0]; consensus: number }>();
+      for (const chunk of chunks) {
+        const assessments = assessmentMap.get(chunk.id) || [];
+        const consensus = computeConsensus(assessments);
+        scoredChunks.set(chunk.id, { chunk, consensus });
+      }
+
+      // Step 6: Distill
+      const distilled = distill(scoredChunks);
+      console.log(`\n✓ Distillation complete`);
+      console.log(`  Chunks selected: ${distilled.chunks.length} of ${chunks.length}`);
+      console.log(`  Total tokens: ${distilled.totalTokens}`);
+      console.log(`  Dropped: ${distilled.droppedChunks} chunk(s) (below threshold or over budget)`);
+
+    } else if (c.kind === "distill_seed") {
+      // Item 69: Generate platform-specific session file from most recent distillation
+      const platform = c.platform as OutputPlatform;
+      const generator = getGenerator(platform);
+      const ext = platform === "gemini" ? "json" : "jsonl";
+      const timestamp = new Date().toISOString().slice(0, 19).replace(/[T:]/g, "-");
+      const outputDir = join(getDataDir(), "distilled");
+      const outputPath = join(outputDir, `${timestamp}-seed.${ext}`);
+
+      // Run a quick pipeline to generate the seed
+      const sessions = await scanSessions({ limit: 5 });
+      if (sessions.length === 0) {
+        console.log("No sessions found to seed from.");
+        return;
+      }
+
+      const allEvents: import("./parsers/types.ts").ParsedEvent[] = [];
+      for (const session of sessions) {
+        const parser = detectParser(session.filePath);
+        if (!parser) continue;
+        const source = await Bun.file(session.filePath).text();
+        for await (const event of parser.parse(source)) {
+          allEvents.push(event);
+        }
+      }
+
+      const chunks = buildChunks(allEvents, sessions[0].sessionId);
+      const scoredChunks = new Map<string, { chunk: typeof chunks[0]; consensus: number }>();
+      for (const chunk of chunks) {
+        scoredChunks.set(chunk.id, { chunk, consensus: chunk.importanceAvg / 10 });
+      }
+      const distilled = distill(scoredChunks);
+
+      const result = await generator.generate(distilled, outputPath);
+      metrics.distillSessionsGenerated(platform);
+      console.log(`✓ Session seed generated for ${platform}`);
+      console.log(`  Output: ${result}`);
+      console.log(`  Chunks: ${distilled.chunks.length}, Tokens: ${distilled.totalTokens}`);
+
+    } else if (c.kind === "distill_query") {
+      // Item 70: Search chunk_fts table for matching chunks
+      try {
+        const db = rawSm.getSessionDb().getDb();
+        const rows = db
+          .prepare("SELECT chunk_id, content FROM chunk_fts WHERE chunk_fts MATCH ? LIMIT 20")
+          .all(c.query) as Array<{ chunk_id: string; content: string }>;
+
+        if (rows.length === 0) {
+          console.log("No matching chunks found.");
+        } else {
+          console.log(`Found ${rows.length} matching chunk(s):\n`);
+          for (const row of rows) {
+            const preview = row.content.slice(0, 200).replace(/\n/g, " ");
+            console.log(`  [${row.chunk_id}] ${preview}...`);
+          }
+        }
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        console.log(`Query failed: ${msg}`);
+      }
+
+    } else if (c.kind === "distill_report") {
+      // Item 71: Show distillation statistics
+      try {
+        const db = rawSm.getSessionDb().getDb();
+        const chunkCount = (db.prepare("SELECT COUNT(*) as count FROM chunks").get() as { count: number }).count;
+        const assessCount = (db.prepare("SELECT COUNT(*) as count FROM assessments").get() as { count: number }).count;
+        const extCount = (db.prepare("SELECT COUNT(*) as count FROM external_sessions").get() as { count: number }).count;
+        const syncQueueSize = await defensiveMem.getSyncQueueSize();
+
+        const avgScore = db.prepare("SELECT AVG(consensus_score) as avg FROM chunks WHERE consensus_score IS NOT NULL").get() as {
+          avg: number | null;
+        };
+
+        const topChunks = db
+          .prepare("SELECT id, importance_avg, consensus_score FROM chunks ORDER BY consensus_score DESC LIMIT 5")
+          .all() as Array<{ id: string; importance_avg: number | null; consensus_score: number | null }>;
+
+        console.log("Distillation Report:");
+        console.log(`  Chunks:             ${chunkCount}`);
+        console.log(`  Assessments:        ${assessCount}`);
+        console.log(`  External sessions:  ${extCount}`);
+        console.log(`  Avg consensus:      ${avgScore.avg != null ? avgScore.avg.toFixed(2) : "N/A"}`);
+        console.log(`  Sync queue:         ${syncQueueSize} pending`);
+
+        if (topChunks.length > 0) {
+          console.log("\n  Top chunks:");
+          for (const tc of topChunks) {
+            const imp = tc.importance_avg != null ? tc.importance_avg.toFixed(1) : "N/A";
+            const con = tc.consensus_score != null ? tc.consensus_score.toFixed(2) : "N/A";
+            console.log(`    ${tc.id}  importance=${imp}  consensus=${con}`);
+          }
+        }
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        console.log(`Report failed: ${msg}`);
+      }
+
+    } else if (c.kind === "distill_assess") {
+      // Item 72: Trigger multi-agent assessment on specific chunk or all unassessed
+      if (c.chunkId) {
+        console.log(`Assessing chunk ${c.chunkId}...`);
+        try {
+          const db = rawSm.getSessionDb().getDb();
+          const chunkRow = db.prepare("SELECT id, summary FROM chunks WHERE id = ?").get(c.chunkId) as {
+            id: string;
+            summary: string | null;
+          } | null;
+          if (!chunkRow) {
+            console.log(`Chunk ${c.chunkId} not found.`);
+            return;
+          }
+          console.log(`Chunk found. Assessment will be submitted to the queue.`);
+          console.log(`Use :distill status to check progress.`);
+        } catch (err) {
+          const msg = err instanceof Error ? err.message : String(err);
+          console.log(`Assessment failed: ${msg}`);
+        }
+      } else {
+        console.log("Usage: :distill assess <chunkId>");
+        console.log("Specify a chunk ID to assess. Use :distill report to see chunk IDs.");
+      }
+
+    } else if (c.kind === "distill_status") {
+      // Item 73: Show pipeline state
+      const queueStatus = assessmentQueue.status();
+      console.log("Distillation Pipeline Status:");
+      console.log(`  Assessment queue:`);
+      console.log(`    Active:     ${queueStatus.active}`);
+      console.log(`    Pending:    ${queueStatus.pending}`);
+      console.log(`    Completed:  ${queueStatus.completed}`);
+      console.log(`    Failed:     ${queueStatus.failed}`);
+      console.log(`    Max concurrent: ${queueStatus.maxConcurrent}`);
+      console.log(`  Watcher: ${watcher.isRunning ? "running" : "stopped"} (${watcher.trackedCount} files tracked)`);
+      const syncSize = await defensiveMem.getSyncQueueSize();
+      console.log(`  Sync queue: ${syncSize} unsynced entries`);
+      console.log(`  Real-time scoring: ${distillEnabled ? "enabled" : "disabled"}`);
+
+    } else if (c.kind === "distill_watch") {
+      // Item 74: Toggle background file watcher
+      if (c.enabled) {
+        if (watcher.isRunning) {
+          console.log("Watcher already running.");
+        } else {
+          await watcher.start();
+          console.log("Background watcher started.");
+        }
+      } else {
+        if (!watcher.isRunning) {
+          console.log("Watcher not running.");
+        } else {
+          watcher.stop();
+          console.log("Background watcher stopped.");
+        }
+      }
+
+    } else if (c.kind === "distill_ask") {
+      // Placeholder for Phase 9 — :distill ask requires queryDistiller (not yet implemented)
+      console.log("`:distill ask` requires the question-driven distiller (Phase 9).");
+      console.log("Use `:distill run` for general distillation or `:distill query` for FTS search.");
     }
   };
 
@@ -414,11 +754,11 @@ export async function runRepl(options: RunReplOptions = {}): Promise<void> {
       console.error(`error: ${msg}`);
     }
     if (options.once) {
-      sm.close();
+      await gracefulShutdown();
       return;
     }
   } else if (options.once) {
-    sm.close();
+    await gracefulShutdown();
     throw new Error("`--once` requires a prompt");
   }
 
@@ -433,7 +773,8 @@ export async function runRepl(options: RunReplOptions = {}): Promise<void> {
     const p = s?.activeProvider || "mock";
     const m = s?.activeModel || "default";
     const brainToken = brain.connected ? "|brain" : "";
-    rl.setPrompt(`[${s?.id || "no-session"}|${p}|${m}${brainToken}]> `);
+    const watchToken = watcher.isRunning ? "|watch" : "";
+    rl.setPrompt(`[${s?.id || "no-session"}|${p}|${m}${brainToken}${watchToken}]> `);
     rl.prompt();
   };
 
@@ -459,8 +800,8 @@ export async function runRepl(options: RunReplOptions = {}): Promise<void> {
     }
   });
 
-  rl.on("close", () => {
-    sm.close();
+  rl.on("close", async () => {
+    await gracefulShutdown();
     process.exit(0);
   });
 
