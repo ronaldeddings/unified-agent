@@ -26,6 +26,7 @@ import { SessionWatcher } from "./distiller/watcher.ts";
 import { AssessmentQueue } from "./distiller/assessmentQueue.ts";
 import { getDataDir } from "./util/paths.ts";
 import type { OutputPlatform } from "./output/index.ts";
+import { queryDistill } from "./distiller/queryDistiller.ts";
 
 interface ContextConfig {
   mode: "off" | "recent" | "full";
@@ -724,9 +725,78 @@ export async function runRepl(options: RunReplOptions = {}): Promise<void> {
       }
 
     } else if (c.kind === "distill_ask") {
-      // Placeholder for Phase 9 — :distill ask requires queryDistiller (not yet implemented)
-      console.log("`:distill ask` requires the question-driven distiller (Phase 9).");
-      console.log("Use `:distill run` for general distillation or `:distill query` for FTS search.");
+      // Item 109: Question-driven distillation via queryDistill()
+      const platform = (c.platform || "claude") as OutputPlatform;
+      const providers = c.providers
+        ? (c.providers.filter((p) => p === "claude" || p === "codex" || p === "gemini") as ("claude" | "codex" | "gemini")[])
+        : distillProviders;
+
+      console.log(`Question-driven distillation starting...`);
+      console.log(`  Question: "${c.question}"`);
+      console.log(`  Platform: ${platform}`);
+      console.log(`  Providers: ${providers.join(", ")}`);
+
+      try {
+        const db = rawSm.getSessionDb().getDb();
+        const result = await queryDistill(c.question, db, defensiveMem, {
+          providers,
+          reRankWithQuestion: parseBoolEnv("UNIFIED_AGENT_DISTILL_RERANK", true),
+          queryAssessmentWeight: Number.parseFloat(process.env.UNIFIED_AGENT_DISTILL_QUERY_WEIGHT || "0.6"),
+          staticAssessmentWeight: Number.parseFloat(process.env.UNIFIED_AGENT_DISTILL_STATIC_WEIGHT || "0.4"),
+          claudeMemMaxResults: Number.parseInt(process.env.UNIFIED_AGENT_DISTILL_CLAUDEMEM_MAX || "20", 10),
+          maxTokens: Number.parseInt(process.env.UNIFIED_AGENT_DISTILL_TOKEN_BUDGET || "80000", 10),
+          timeoutMs: Number.parseInt(process.env.UNIFIED_AGENT_DISTILL_ASSESSMENT_TIMEOUT_MS || "30000", 10),
+          cwd: sm.getCurrent()?.cwd || process.cwd(),
+        });
+
+        if (result.chunks.length === 0) {
+          console.log("\nNo relevant chunks found for this question.");
+          console.log(`  FTS matches: ${result.searchStats.chunkFtsMatches}`);
+          console.log(`  ClaudeMem matches: ${result.searchStats.claudeMemMatches}`);
+          return;
+        }
+
+        // Generate platform-specific session file
+        const generator = getGenerator(platform);
+        const ext = platform === "gemini" ? "json" : "jsonl";
+        const slug = c.question
+          .toLowerCase()
+          .replace(/[^\w\s]/g, "")
+          .replace(/\s+/g, "-")
+          .slice(0, 50);
+        const timestamp = new Date().toISOString().slice(0, 19).replace(/[T:]/g, "-");
+        const outputDir = join(getDataDir(), "distilled");
+
+        // Ensure output directory exists
+        const { mkdirSync } = await import("node:fs");
+        try {
+          mkdirSync(outputDir, { recursive: true });
+        } catch {
+          // Directory may already exist
+        }
+
+        const outputPath = join(outputDir, `${timestamp}-${slug}.${ext}`);
+        const outputFile = await generator.generate(result, outputPath);
+
+        metrics.distillSessionsGenerated(platform);
+
+        console.log(`\n✓ Question-driven distillation complete`);
+        console.log(`  Question: "${c.question}"`);
+        console.log(`  Sources: ${result.searchStats.chunkFtsMatches} FTS matches + ${result.searchStats.claudeMemMatches} ClaudeMem matches → ${result.searchStats.totalCandidates} unique candidates`);
+        console.log(`  Selected: ${result.chunks.length} chunks (${result.totalTokens.toLocaleString()} tokens) from ${result.searchStats.totalCandidates} candidates`);
+        console.log(`  Output: ${outputFile}`);
+
+        if (platform === "claude") {
+          console.log(`\n  To use: claude --resume ${outputFile}`);
+        } else if (platform === "codex") {
+          console.log(`\n  To use: codex --session ${outputFile}`);
+        } else {
+          console.log(`\n  To use: gemini --session ${outputFile}`);
+        }
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        console.log(`Question-driven distillation failed: ${msg}`);
+      }
     }
   };
 

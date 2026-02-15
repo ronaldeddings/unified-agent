@@ -770,24 +770,24 @@ Each item below is an individual, atomic task. No grouping. Items are ordered by
 - [x] 91. Wire defensive mem into `runRepl()` — replace direct ClaudeMemClient with DefensiveClaudeMemClient
 - [x] 92. Add periodic sync queue flush to REPL event loop (every 60 seconds)
 - [x] 93. Add graceful shutdown for background watcher and sync queue on `:quit`
-- [ ] 94. Define `QueryDistillConfig` and `QueryDistillResult` interfaces in `src/distiller/queryDistiller.ts`
-- [ ] 95. Implement FTS-based chunk search in `queryDistill()` — query `chunk_fts` table with user's question, return matching chunk IDs with their associated chunks
-- [ ] 96. Implement ClaudeMem-based chunk search in `queryDistill()` — call `memClient.searchAsChunks(question)` to discover relevant past observations as synthetic chunks
-- [ ] 97. Implement candidate pool merge and deduplication in `queryDistill()` — combine FTS results and ClaudeMem results, deduplicate by content hash
-- [ ] 98. Implement question-aware re-ranking in `queryDistill()` — send merged candidates through question-aware assessment prompts via provider CLIs
-- [ ] 99. Implement question-weighted consensus scoring — `queryWeight * questionRelevance + staticWeight * generalConsensus` with configurable weights (default 0.6/0.4)
-- [ ] 100. Implement token-budget selection within `queryDistill()` using question-weighted scores to produce a `QueryDistillResult`
-- [ ] 101. Write unit tests for `queryDistill()` covering FTS search, ClaudeMem search, merge/dedup, and question-weighted scoring
-- [ ] 102. Define `ClaudeMemSearchResult` interface in `src/memory/defensiveMem.ts`
-- [ ] 103. Implement `searchAsChunks()` method on `DefensiveClaudeMemClient` — convert ClaudeMem search results to synthetic Chunk objects with similarity-derived importance scores
-- [ ] 104. Write unit tests for `searchAsChunks()` covering result conversion, empty results, and missing metadata fields
-- [ ] 105. Implement `buildQuestionAwarePrompt()` in `src/assessment/prompts.ts` — inject user's question, rate on questionRelevance/signalDensity/contextValue, request JSON response
-- [ ] 106. Write unit tests for question-aware prompt template verifying question injection and JSON response schema expectations
+- [x] 94. Define `QueryDistillConfig` and `QueryDistillResult` interfaces in `src/distiller/queryDistiller.ts`
+- [x] 95. Implement FTS-based chunk search in `queryDistill()` — query `chunk_fts` table with user's question, return matching chunk IDs with their associated chunks
+- [x] 96. Implement ClaudeMem-based chunk search in `queryDistill()` — call `memClient.searchAsChunks(question)` to discover relevant past observations as synthetic chunks
+- [x] 97. Implement candidate pool merge and deduplication in `queryDistill()` — combine FTS results and ClaudeMem results, deduplicate by content hash
+- [x] 98. Implement question-aware re-ranking in `queryDistill()` — send merged candidates through question-aware assessment prompts via provider CLIs
+- [x] 99. Implement question-weighted consensus scoring — `queryWeight * questionRelevance + staticWeight * generalConsensus` with configurable weights (default 0.6/0.4)
+- [x] 100. Implement token-budget selection within `queryDistill()` using question-weighted scores to produce a `QueryDistillResult`
+- [x] 101. Write unit tests for `queryDistill()` covering FTS search, ClaudeMem search, merge/dedup, and question-weighted scoring
+- [x] 102. Define `ClaudeMemSearchResult` interface in `src/memory/defensiveMem.ts`
+- [x] 103. Implement `searchAsChunks()` method on `DefensiveClaudeMemClient` — convert ClaudeMem search results to synthetic Chunk objects with similarity-derived importance scores
+- [x] 104. Write unit tests for `searchAsChunks()` covering result conversion, empty results, and missing metadata fields
+- [x] 105. Implement `buildQuestionAwarePrompt()` in `src/assessment/prompts.ts` — inject user's question, rate on questionRelevance/signalDensity/contextValue, request JSON response
+- [x] 106. Write unit tests for question-aware prompt template verifying question injection and JSON response schema expectations
 - [x] 107. Add `distill_ask` command kind to `Command` union type in `src/commands/parse.ts`
 - [x] 108. Implement `:distill ask` command parser in `parseLine()` — parse quoted question string, optional `--platform` and `--providers` flags
-- [ ] 109. Add `:distill ask` handler to `runCommand()` in `src/repl.ts` — call `queryDistill()`, generate platform-specific session file, display summary with file path and usage instructions
+- [x] 109. Add `:distill ask` handler to `runCommand()` in `src/repl.ts` — call `queryDistill()`, generate platform-specific session file, display summary with file path and usage instructions
 - [x] 110. Write unit test for `:distill ask` command parsing with various argument combinations
-- [ ] 111. Add integration test: `:distill ask` end-to-end — ask a question against pre-populated chunks, verify output file contains question-relevant content ranked by relevance
+- [x] 111. Add integration test: `:distill ask` end-to-end — ask a question against pre-populated chunks, verify output file contains question-relevant content ranked by relevance
 - [x] 112. Update `:help` output to include `:distill ask` command documentation
 
 ---
