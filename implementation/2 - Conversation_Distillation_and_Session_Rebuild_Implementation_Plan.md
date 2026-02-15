@@ -728,11 +728,11 @@ Each item below is an individual, atomic task. No grouping. Items are ordered by
 - [x] 49. Write unit tests for Claude generator verifying `compact_boundary` format
 - [x] 50. Write unit tests for Codex generator verifying JSONL format
 - [x] 51. Write unit tests for Gemini generator verifying JSON format
-- [ ] 52. Implement `DefensiveClaudeMemClient` in `src/memory/defensiveMem.ts`
-- [ ] 53. Implement `storeObservation()` with write-local-first to `_sync_queue` table
-- [ ] 54. Implement `flushSyncQueue()` to retry unsynced entries against ClaudeMem HTTP worker
-- [ ] 55. Implement `getSyncQueueSize()` for status reporting
-- [ ] 56. Write unit tests for defensive mem wrapper covering offline and online scenarios
+- [x] 52. Implement `DefensiveClaudeMemClient` in `src/memory/defensiveMem.ts`
+- [x] 53. Implement `storeObservation()` with write-local-first to `_sync_queue` table
+- [x] 54. Implement `flushSyncQueue()` to retry unsynced entries against ClaudeMem HTTP worker
+- [x] 55. Implement `getSyncQueueSize()` for status reporting
+- [x] 56. Write unit tests for defensive mem wrapper covering offline and online scenarios
 - [x] 57. Create SQLite migration file `src/storage/distillMigrations.ts` with `chunks`, `assessments`, `external_sessions`, `chunk_fts`, and `_sync_queue` table creation
 - [x] 58. Integrate migration into `SessionDb` constructor — call `runDistillMigrations()` after existing `ensureColumn` calls
 - [x] 59. Write unit test for distill migrations — verify all 5 tables are created
