@@ -694,15 +694,15 @@ Each item below is an individual, atomic task. No grouping. Items are ordered by
 - [x] 15. Write unit test for scanner with mocked filesystem paths
 - [x] 16. Create `src/scoring/` directory structure
 - [x] 17. Define `ScoringConfig` interface in `src/scoring/importance.ts`
-- [ ] 18. Implement `scoreEvent()` function with base score + bonus system (toolUse: +15, error: +20, userPrompt: +10, codeBlock: +10, fileEdit: +12, longContent: -5, systemEvent: -20, hookEvent: -15)
-- [ ] 19. Implement clamp logic to keep scores in 0-100 range
-- [ ] 20. Write unit tests for `scoreEvent()` covering all bonus/penalty paths
-- [ ] 21. Implement real-time scoring hook in `src/scoring/realtime.ts` — wrap `SessionManager.recordEvent()` to attach `importanceScore` before persistence
-- [ ] 22. Write unit test for real-time scoring hook verifying scores are attached to persisted events
+- [x] 18. Implement `scoreEvent()` function with base score + bonus system (toolUse: +15, error: +20, userPrompt: +10, codeBlock: +10, fileEdit: +12, longContent: -5, systemEvent: -20, hookEvent: -15)
+- [x] 19. Implement clamp logic to keep scores in 0-100 range
+- [x] 20. Write unit tests for `scoreEvent()` covering all bonus/penalty paths
+- [x] 21. Implement real-time scoring hook in `src/scoring/realtime.ts` — wrap `SessionManager.recordEvent()` to attach `importanceScore` before persistence
+- [x] 22. Write unit test for real-time scoring hook verifying scores are attached to persisted events
 - [x] 23. Define `Chunk` interface and `ChunkConfig` in `src/scoring/chunker.ts`
-- [ ] 24. Implement `buildChunks()` — filter below threshold, group into windows, estimate tokens, split oversized chunks, add overlap
+- [x] 24. Implement `buildChunks()` — filter below threshold, group into windows, estimate tokens, split oversized chunks, add overlap
 - [x] 25. Implement token estimation helper (`content.length / 4` rough approximation)
-- [ ] 26. Write unit tests for `buildChunks()` covering threshold filtering, token splitting, and overlap
+- [x] 26. Write unit tests for `buildChunks()` covering threshold filtering, token splitting, and overlap
 - [x] 27. Create `src/assessment/` directory structure
 - [x] 28. Define `AssessmentResult` and `AssessorConfig` interfaces in `src/assessment/assessor.ts`
 - [ ] 29. Implement structured assessment prompt template in `src/assessment/prompts.ts` — include chunk content, ask for 1-10 rating on relevance/signal-density/reusability, request JSON response
