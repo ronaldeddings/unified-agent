@@ -15,6 +15,8 @@ export interface ProviderAskOptions {
   permissionMode?: PermissionMode;
   maxThinkingTokens?: number;
   signal?: AbortSignal;
+  /** Path to a distilled JSONL file for --resume (Claude) or context injection (other providers). */
+  resumePath?: string;
 }
 
 export interface ProviderCapabilities {

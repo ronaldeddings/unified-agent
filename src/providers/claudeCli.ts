@@ -116,6 +116,7 @@ export function buildClaudeArgs(prompt: string, opts: {
   sdkUrl?: string;
   permissionMode?: PermissionMode;
   maxThinkingTokens?: number;
+  resumePath?: string;
 } = {}): string[] {
   const shouldBypassPermissions = resolveBypassPermissions(opts.permissionMode, opts.sdkUrl);
   const args = [
@@ -133,6 +134,7 @@ export function buildClaudeArgs(prompt: string, opts: {
     args.push("--max-thinking-tokens", String(opts.maxThinkingTokens));
   }
   if (opts.sdkUrl) args.push("--sdk-url", opts.sdkUrl);
+  if (opts.resumePath) args.push("--resume", opts.resumePath);
   args.push(prompt);
   return args;
 }

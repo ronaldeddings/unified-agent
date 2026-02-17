@@ -22,21 +22,90 @@ export type Command =
   | { kind: "brain_status" }
   | { kind: "brain_replay"; sessionId: string }
   | { kind: "distill_scan" }
-  | { kind: "distill_run"; sessionIds?: string[]; providers?: string[] }
+  | { kind: "distill_run"; sessionIds?: string[]; providers?: string[]; cwd?: string; limit?: number; budget?: number; output?: string; format?: "conversation" | "summary" }
   | { kind: "distill_seed"; platform: string; sessionId?: string }
-  | { kind: "distill_ask"; question: string; platform?: string; providers?: string[] }
+  | { kind: "distill_ask"; question: string; platform?: string; providers?: string[]; cwd?: string; limit?: number; budget?: number }
   | { kind: "distill_query"; query: string }
   | { kind: "distill_report"; sessionId?: string }
   | { kind: "distill_assess"; chunkId?: string }
   | { kind: "distill_status" }
-  | { kind: "distill_watch"; enabled: boolean };
+  | { kind: "distill_watch"; enabled: boolean }
+  | { kind: "distill_build"; cwd?: string; limit?: number; budget?: number; output?: string; format?: "conversation" | "summary"; providers?: string[]; dryRun?: boolean; filter?: string; since?: string; until?: string; keywords?: string[] }
+  | { kind: "distill_filter"; text: string; providers?: string[] }
+  | { kind: "distill_load"; path?: string; cwd?: string }
+  | { kind: "distill_unload" };
+
+/**
+ * Shared distill flags parsed from --cwd, --limit, --budget, --output, --platform, --providers.
+ */
+interface DistillFlags {
+  platform: string;
+  providers: string[];
+  cwd: string;
+  limit: number;
+  budget: number;
+  output: string;
+  format: string;
+  filter: string;
+}
+
+/**
+ * Parse shared distill flags from a whitespace-split array of tokens.
+ * Recognizes: --cwd, --limit, --budget, --output, --platform, --providers
+ * Returns the flags and any remaining non-flag tokens.
+ */
+function parseDistillFlags(flagParts: string[]): { flags: DistillFlags; remaining: string[] } {
+  const flags: DistillFlags = { platform: "", providers: [], cwd: "", limit: 0, budget: 0, output: "", format: "", filter: "" };
+  const remaining: string[] = [];
+
+  for (let i = 0; i < flagParts.length; i++) {
+    const part = flagParts[i];
+    if (part === "--platform" && flagParts[i + 1]) {
+      flags.platform = flagParts[i + 1].toLowerCase();
+      i++;
+    } else if (part === "--providers" && flagParts[i + 1]) {
+      flags.providers = flagParts[i + 1].split(",").map((s) => s.trim().toLowerCase()).filter(Boolean);
+      i++;
+    } else if (part === "--cwd" && flagParts[i + 1]) {
+      flags.cwd = flagParts[i + 1];
+      i++;
+    } else if (part === "--limit" && flagParts[i + 1]) {
+      const n = Number.parseInt(flagParts[i + 1], 10);
+      if (Number.isFinite(n) && n > 0) flags.limit = n;
+      i++;
+    } else if (part === "--budget" && flagParts[i + 1]) {
+      const n = Number.parseInt(flagParts[i + 1], 10);
+      if (Number.isFinite(n) && n > 0) flags.budget = n;
+      i++;
+    } else if (part === "--output" && flagParts[i + 1]) {
+      flags.output = flagParts[i + 1];
+      i++;
+    } else if (part === "--format" && flagParts[i + 1]) {
+      const f = flagParts[i + 1].toLowerCase();
+      if (f === "conversation" || f === "summary") flags.format = f;
+      i++;
+    } else if (part === "--filter" && flagParts[i + 1]) {
+      // Collect all tokens until the next --flag as the filter text
+      const filterParts: string[] = [];
+      for (let j = i + 1; j < flagParts.length; j++) {
+        if (flagParts[j].startsWith("--")) break;
+        filterParts.push(flagParts[j]);
+      }
+      flags.filter = filterParts.join(" ").replace(/^["']|["']$/g, "");
+      i += filterParts.length;
+    } else {
+      remaining.push(part);
+    }
+  }
+
+  return { flags, remaining };
+}
 
 /**
  * Parse `:distill ask` arguments: quoted question string + optional flags.
- * Supports: "question" --platform claude --providers claude,codex,gemini
+ * Supports: "question" --platform claude --providers claude,codex,gemini --cwd /path --limit 20 --budget 80000
  */
-function parseAskArgs(argStr: string): { question: string; flags: { platform: string; providers: string[] } } {
-  const flags = { platform: "", providers: [] as string[] };
+function parseAskArgs(argStr: string): { question: string; flags: DistillFlags } {
   let question = "";
 
   // Extract quoted question
@@ -62,17 +131,8 @@ function parseAskArgs(argStr: string): { question: string; flags: { platform: st
     }
   }
 
-  // Parse flags from remainder
-  const flagParts = remainder.split(/\s+/);
-  for (let i = 0; i < flagParts.length; i++) {
-    if (flagParts[i] === "--platform" && flagParts[i + 1]) {
-      flags.platform = flagParts[i + 1].toLowerCase();
-      i++;
-    } else if (flagParts[i] === "--providers" && flagParts[i + 1]) {
-      flags.providers = flagParts[i + 1].split(",").map((s) => s.trim().toLowerCase()).filter(Boolean);
-      i++;
-    }
-  }
+  // Parse flags from remainder using shared parser
+  const { flags } = parseDistillFlags(remainder.split(/\s+/).filter(Boolean));
 
   return { question, flags };
 }
@@ -173,21 +233,18 @@ export function parseLine(line: string): { command?: Command; userText?: string 
     if (sub === "scan") return { command: { kind: "distill_scan" } };
     if (sub === "status") return { command: { kind: "distill_status" } };
     if (sub === "run") {
-      const sessionIds: string[] = [];
-      const providers: string[] = [];
-      for (let i = 1; i < parts.length; i++) {
-        if (parts[i] === "--providers" && parts[i + 1]) {
-          providers.push(...parts[i + 1].split(",").map((s) => s.trim()).filter(Boolean));
-          i++;
-        } else {
-          sessionIds.push(parts[i]);
-        }
-      }
+      const { flags, remaining } = parseDistillFlags(parts.slice(1));
+      const sessionIds = remaining.filter(Boolean);
       return {
         command: {
           kind: "distill_run",
           sessionIds: sessionIds.length > 0 ? sessionIds : undefined,
-          providers: providers.length > 0 ? providers : undefined,
+          providers: flags.providers.length > 0 ? flags.providers : undefined,
+          cwd: flags.cwd || undefined,
+          limit: flags.limit || undefined,
+          budget: flags.budget || undefined,
+          output: flags.output || undefined,
+          format: (flags.format === "conversation" || flags.format === "summary") ? flags.format : undefined,
         },
       };
     }
@@ -229,8 +286,70 @@ export function parseLine(line: string): { command?: Command; userText?: string 
           question,
           platform: flags.platform || undefined,
           providers: flags.providers.length > 0 ? flags.providers : undefined,
+          cwd: flags.cwd || undefined,
+          limit: flags.limit || undefined,
+          budget: flags.budget || undefined,
         },
       };
+    }
+    if (sub === "build") {
+      const { flags } = parseDistillFlags(parts.slice(1));
+      const hasDryRun = parts.slice(1).some((p) => p === "--dry-run");
+      return {
+        command: {
+          kind: "distill_build",
+          cwd: flags.cwd || undefined,
+          limit: flags.limit || undefined,
+          budget: flags.budget || undefined,
+          output: flags.output || undefined,
+          format: (flags.format === "conversation" || flags.format === "summary") ? flags.format : undefined,
+          providers: flags.providers.length > 0 ? flags.providers : undefined,
+          dryRun: hasDryRun || undefined,
+          filter: flags.filter || undefined,
+        },
+      };
+    }
+    if (sub === "filter") {
+      // :distill filter "natural language text" [--providers claude,codex]
+      const argStr = parts.slice(1).join(" ");
+      const { question: text, flags } = parseAskArgs(argStr);
+      if (!text) return { command: { kind: "help" } };
+      return {
+        command: {
+          kind: "distill_filter",
+          text,
+          providers: flags.providers.length > 0 ? flags.providers : undefined,
+        },
+      };
+    }
+    if (sub === "preview") {
+      // Alias for :distill build --dry-run
+      const { flags } = parseDistillFlags(parts.slice(1));
+      return {
+        command: {
+          kind: "distill_build",
+          cwd: flags.cwd || undefined,
+          limit: flags.limit || undefined,
+          budget: flags.budget || undefined,
+          providers: flags.providers.length > 0 ? flags.providers : undefined,
+          dryRun: true,
+        },
+      };
+    }
+    if (sub === "load") {
+      // :distill load [path] [--cwd /project/path]
+      const { flags, remaining } = parseDistillFlags(parts.slice(1));
+      const explicitPath = remaining.join(" ").trim() || undefined;
+      return {
+        command: {
+          kind: "distill_load",
+          path: explicitPath,
+          cwd: flags.cwd || undefined,
+        },
+      };
+    }
+    if (sub === "unload") {
+      return { command: { kind: "distill_unload" } };
     }
     return { command: { kind: "help" } };
   }

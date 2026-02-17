@@ -11,6 +11,7 @@ import { homedir } from "node:os";
 import { basename, resolve } from "node:path";
 import { stat } from "node:fs/promises";
 import { PLATFORM_SESSION_PATHS, type ScannedPlatform, type ScannedSession } from "./paths.ts";
+import { getProjectSessionDirs } from "./projectResolver.ts";
 
 /**
  * Resolve ~ to $HOME in a glob pattern.
@@ -97,17 +98,34 @@ export interface ScanOptions {
   minFileSize?: number;
   /** Maximum number of results to return. Default: unlimited. */
   limit?: number;
+  /** Filter to sessions belonging to this project directory (absolute path). */
+  projectPath?: string;
+  /** Only include sessions modified on or after this ISO date (YYYY-MM-DD). */
+  since?: string;
+  /** Only include sessions modified on or before this ISO date (YYYY-MM-DD). */
+  until?: string;
 }
 
 /**
  * Scan all configured platform session directories for session files.
  * Returns ScannedSession[] sorted by modifiedAt descending (most recent first).
+ *
+ * When `projectPath` is provided, Claude sessions are filtered to only those
+ * under matching project directories. Codex/Gemini sessions are not filtered
+ * at scan time (their sessions are global; content-based filtering happens at parse time).
  */
 export async function scanSessions(
   options: ScanOptions = {},
 ): Promise<ScannedSession[]> {
-  const platforms = options.platforms ?? (Object.keys(PLATFORM_SESSION_PATHS) as ScannedPlatform[]);
+  // Default to parseable platforms only (unified has no parser — its files are our own session format)
+  const platforms = options.platforms ?? (Object.keys(PLATFORM_SESSION_PATHS) as ScannedPlatform[]).filter((p) => p !== "unified");
   const minSize = options.minFileSize ?? 0;
+
+  // Resolve project directories for Claude session filtering
+  let claudeProjectDirs: string[] | null = null;
+  if (options.projectPath) {
+    claudeProjectDirs = getProjectSessionDirs(options.projectPath);
+  }
 
   // Scan all platforms in parallel
   const platformResults = await Promise.all(
@@ -119,6 +137,33 @@ export async function scanSessions(
 
   if (minSize > 0) {
     all = all.filter((s) => s.fileSize >= minSize);
+  }
+
+  // Filter Claude sessions by project directory when projectPath is specified
+  if (claudeProjectDirs && claudeProjectDirs.length > 0) {
+    all = all.filter((s) => {
+      if (s.platform !== "claude") return true;
+      return claudeProjectDirs!.some((dir) => s.filePath.startsWith(dir));
+    });
+  } else if (options.projectPath && platforms.includes("claude")) {
+    // projectPath was specified but no matching Claude project dirs found — exclude all Claude sessions
+    all = all.filter((s) => s.platform !== "claude");
+  }
+
+  // Filter by date range when since/until are specified
+  if (options.since) {
+    const sinceDate = new Date(options.since);
+    if (!isNaN(sinceDate.getTime())) {
+      sinceDate.setHours(0, 0, 0, 0);
+      all = all.filter((s) => s.modifiedAt >= sinceDate);
+    }
+  }
+  if (options.until) {
+    const untilDate = new Date(options.until);
+    if (!isNaN(untilDate.getTime())) {
+      untilDate.setHours(23, 59, 59, 999);
+      all = all.filter((s) => s.modifiedAt <= untilDate);
+    }
   }
 
   // Sort by modifiedAt descending

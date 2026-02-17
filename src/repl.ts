@@ -27,6 +27,10 @@ import { AssessmentQueue } from "./distiller/assessmentQueue.ts";
 import { getDataDir } from "./util/paths.ts";
 import type { OutputPlatform } from "./output/index.ts";
 import { queryDistill } from "./distiller/queryDistiller.ts";
+import { extractFilters, type DistillFilterParams } from "./distiller/naturalFilter.ts";
+import { groupByTopic, assembleSynthesis, generateConversationFromSynthesis } from "./synthesis/synthesizer.ts";
+import { conversationGenerator } from "./output/conversationGenerator.ts";
+import { findLatestBuild, loadDistilledConversation, extractContextText, type DistilledConversation } from "./distiller/distillLoader.ts";
 
 interface ContextConfig {
   mode: "off" | "recent" | "full";
@@ -141,6 +145,9 @@ export async function runRepl(options: RunReplOptions = {}): Promise<void> {
     await watcher.start();
   }
 
+  // Loaded distilled conversation context (set by :distill load, cleared by :distill unload)
+  let loadedConversation: DistilledConversation | null = null;
+
   // Item 92: Periodic sync queue flush (every 60 seconds)
   const syncIntervalMs = Number.parseInt(process.env.UNIFIED_AGENT_DISTILL_SYNC_INTERVAL_MS || "60000", 10);
   const syncTimer = setInterval(async () => {
@@ -207,6 +214,11 @@ export async function runRepl(options: RunReplOptions = {}): Promise<void> {
     console.log('  :distill ask "question" [--platform claude|codex|gemini] [--providers p1,p2]');
     console.log("  :distill scan");
     console.log("  :distill run [sessionId...] [--providers p1,p2]");
+    console.log("  :distill build [--cwd path] [--limit N] [--budget N] [--format conversation|summary] [--providers p1,p2] [--dry-run] [--filter \"...\"]");
+    console.log("  :distill preview [--cwd path] [--limit N]  (alias for build --dry-run)");
+    console.log('  :distill filter "natural language scope description" [--providers p1,p2]');
+    console.log("  :distill load [path] [--cwd path]          load distilled context for provider sessions");
+    console.log("  :distill unload                             clear loaded distilled context");
     console.log("  :distill seed claude|codex|gemini [sessionId]");
     console.log("  :distill query <text>");
     console.log("  :distill report [sessionId]");
@@ -328,10 +340,26 @@ export async function runRepl(options: RunReplOptions = {}): Promise<void> {
     const providerName = (s.activeProvider || "mock") as ProviderName;
     const provider = getProvider(providerName);
 
-    const resp = await provider.ask(fullPrompt, {
+    // If distilled context is loaded, inject it into the provider call
+    let promptWithContext = fullPrompt;
+    let resumePath: string | undefined;
+
+    if (loadedConversation) {
+      if (providerName === "claude") {
+        // Claude supports --resume natively — pass the JSONL file path
+        resumePath = loadedConversation.filePath;
+      } else {
+        // Other providers: prepend distilled context as text
+        const contextBlock = extractContextText(loadedConversation);
+        promptWithContext = contextBlock + "\n\n" + fullPrompt;
+      }
+    }
+
+    const resp = await provider.ask(promptWithContext, {
       cwd: s.cwd,
       model: s.activeModel,
       permissionMode: "bypassPermissions",
+      resumePath,
     });
     await sm.recordAssistant(redactForStorage(resp.text));
     console.log(resp.text);
@@ -510,13 +538,21 @@ export async function runRepl(options: RunReplOptions = {}): Promise<void> {
       console.log("Starting distillation pipeline...");
 
       // Step 1: Determine which sessions to process
-      let sessions = await scanSessions();
+      let sessions = await scanSessions({
+        projectPath: c.cwd,
+        limit: c.limit,
+      });
       if (c.sessionIds && c.sessionIds.length > 0) {
         sessions = sessions.filter((s) => c.sessionIds!.some((id) => s.sessionId === id || s.filePath.includes(id)));
       }
       if (sessions.length === 0) {
         console.log("No matching sessions found.");
         return;
+      }
+      // Warn if processing a large number of sessions without explicit limits
+      if (!c.limit && !c.cwd && sessions.length > 100) {
+        console.log(`⚠️  Found ${sessions.length} sessions. This may take a very long time.`);
+        console.log(`   Tip: Use :distill build --cwd . for project-scoped builds, or add --limit N.`);
       }
       console.log(`Processing ${sessions.length} session(s)...`);
 
@@ -554,15 +590,31 @@ export async function runRepl(options: RunReplOptions = {}): Promise<void> {
       metrics.distillChunksAssessed(chunks.length);
 
       // Step 5: Compute consensus scores
+      const runConsensusCfg = { minAssessments: Math.min(providers.length, 2) };
       const scoredChunks = new Map<string, { chunk: typeof chunks[0]; consensus: number }>();
       for (const chunk of chunks) {
         const assessments = assessmentMap.get(chunk.id) || [];
-        const consensus = computeConsensus(assessments);
+        const consensus = computeConsensus(assessments, runConsensusCfg);
         scoredChunks.set(chunk.id, { chunk, consensus });
       }
 
-      // Step 6: Distill
-      const distilled = distill(scoredChunks);
+      // Step 5b: Persist chunks + FTS for future :distill ask queries
+      const sessionDb = rawSm.getSessionDb();
+      let persistedCount = 0;
+      for (const [chunkId, { chunk, consensus }] of scoredChunks) {
+        try {
+          sessionDb.persistChunk(chunk, persistedCount, consensus);
+          const content = chunk.events.map((e) => e.content).join("\n");
+          sessionDb.persistChunkFTS(chunk.id, content);
+          persistedCount++;
+        } catch {
+          // Duplicate chunk IDs on re-run — skip silently
+        }
+      }
+      console.log(`  Persisted ${persistedCount} chunk(s) to SQLite + FTS index`);
+
+      // Step 6: Distill (with optional token budget from --budget flag)
+      const distilled = distill(scoredChunks, c.budget ? { maxTokens: c.budget } : undefined);
       console.log(`\n✓ Distillation complete`);
       console.log(`  Chunks selected: ${distilled.chunks.length} of ${chunks.length}`);
       console.log(`  Total tokens: ${distilled.totalTokens}`);
@@ -724,6 +776,303 @@ export async function runRepl(options: RunReplOptions = {}): Promise<void> {
         }
       }
 
+    } else if (c.kind === "distill_filter") {
+      // Phase 14: Natural language filter → extract params → run build
+      const filterProvider = (c.providers?.[0] || distillProviders[0] || "claude") as "claude" | "codex" | "gemini";
+      console.log(`\n🔍 Extracting filters from natural language...`);
+      console.log(`  Using provider: ${filterProvider}`);
+      const nlParams = await extractFilters(c.text, filterProvider);
+      console.log(`\n📋 Extracted filter parameters:`);
+      for (const [key, value] of Object.entries(nlParams)) {
+        if (value !== undefined) {
+          console.log(`  ${key}: ${JSON.stringify(value)}`);
+        }
+      }
+      if (Object.keys(nlParams).length === 0) {
+        console.log("  (no filters extracted — check your input text)");
+        return;
+      }
+      // Execute build with extracted params — pass values directly to avoid re-extraction
+      console.log(`\n  Running :distill build with extracted filters...`);
+      const syntheticBuild: Command = {
+        kind: "distill_build",
+        cwd: nlParams.cwd,
+        limit: nlParams.limit,
+        budget: nlParams.budget,
+        format: nlParams.format,
+        providers: c.providers || nlParams.providers, // CLI flag overrides LLM-extracted
+        since: nlParams.since,
+        until: nlParams.until,
+        keywords: nlParams.keywords,
+      };
+      // Re-dispatch as distill_build (recursive handler call via the same switch)
+      Object.assign(c, syntheticBuild);
+      // Fall through to distill_build handler below
+
+    } else if (c.kind === "distill_load") {
+      // Phase 15: Load distilled conversation context
+      let targetPath = c.path;
+      if (!targetPath) {
+        const cwd = c.cwd || sm.getCurrent()?.cwd || process.cwd();
+        console.log(`\n🔍 Searching for latest build for ${cwd}...`);
+        targetPath = findLatestBuild(cwd) || undefined;
+        if (!targetPath) {
+          // Try without cwd filter as fallback
+          targetPath = findLatestBuild() || undefined;
+          if (targetPath) {
+            console.log(`  No build found for this project — using latest available build.`);
+          }
+        }
+      }
+      if (!targetPath) {
+        console.log("No distilled build files found. Run :distill build first.");
+        return;
+      }
+      try {
+        loadedConversation = loadDistilledConversation(targetPath);
+        console.log(`\n✓ Loaded distilled conversation`);
+        console.log(`  File: ${loadedConversation.filePath}`);
+        console.log(`  Project: ${loadedConversation.cwd}`);
+        console.log(`  Turns: ${loadedConversation.turns.length} (${loadedConversation.topicCount} topics)`);
+        console.log(`  Content: ${loadedConversation.totalChars.toLocaleString()} chars`);
+        console.log(`  Created: ${loadedConversation.createdAt}`);
+
+        const s = sm.getCurrent();
+        if (s?.activeProvider === "claude") {
+          console.log(`\n  Context will be loaded via --resume (native Claude conversation history)`);
+        } else {
+          console.log(`\n  Context will be injected as text into provider prompts`);
+        }
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        console.log(`Failed to load: ${msg}`);
+      }
+
+    } else if (c.kind === "distill_unload") {
+      if (loadedConversation) {
+        console.log(`Unloaded: ${loadedConversation.filePath}`);
+        loadedConversation = null;
+      } else {
+        console.log("No conversation loaded.");
+      }
+
+    }
+    if (c.kind === "distill_build") {
+      // Phase 13+14: Full pipeline — optionally with NL-extracted params
+      // Use pre-extracted values from :distill filter, or extract from --filter flag
+      let nlKeywords: string[] | undefined = c.keywords;
+      let nlSince: string | undefined = c.since;
+      let nlUntil: string | undefined = c.until;
+
+      if (c.filter && !nlKeywords && !nlSince && !nlUntil) {
+        const filterProvider = (distillProviders[0] || "claude") as "claude" | "codex" | "gemini";
+        console.log(`\n🔍 Extracting filters from: "${c.filter}"`);
+        console.log(`  Using provider: ${filterProvider}`);
+        const nlParams = await extractFilters(c.filter, filterProvider);
+        console.log(`📋 Extracted:`);
+        for (const [key, value] of Object.entries(nlParams)) {
+          if (value !== undefined) console.log(`  ${key}: ${JSON.stringify(value)}`);
+        }
+        // Merge NL params into command (NL fills gaps, explicit flags override)
+        if (!c.cwd && nlParams.cwd) c.cwd = nlParams.cwd;
+        if (!c.limit && nlParams.limit) c.limit = nlParams.limit;
+        if (!c.budget && nlParams.budget) c.budget = nlParams.budget;
+        if (!c.format && nlParams.format) c.format = nlParams.format;
+        if (!c.providers && nlParams.providers) c.providers = nlParams.providers;
+        nlKeywords = nlParams.keywords;
+        nlSince = nlParams.since;
+        nlUntil = nlParams.until;
+      }
+
+      // Phase 13: Full pipeline — scan → parse → score → chunk → assess → consensus → persist → distill → synthesize → generate JSONL
+      const cwd = c.cwd || process.cwd();
+      const limit = c.limit || 20;
+      const budget = c.budget || 80000;
+      const format = c.format || "conversation";
+      const providers = c.providers
+        ? (c.providers.filter((p) => p === "claude" || p === "codex" || p === "gemini") as ("claude" | "codex" | "gemini")[])
+        : distillProviders;
+
+      console.log(`\n🔨 distill build — full pipeline`);
+      console.log(`  Project: ${cwd}`);
+      console.log(`  Limit: ${limit} sessions`);
+      console.log(`  Budget: ${budget.toLocaleString()} tokens`);
+      console.log(`  Format: ${format}`);
+      console.log(`  Providers: ${providers.join(", ")}`);
+      if (nlKeywords && nlKeywords.length > 0) console.log(`  Keywords: ${nlKeywords.join(", ")}`);
+      if (nlSince) console.log(`  Since: ${nlSince}`);
+      if (nlUntil) console.log(`  Until: ${nlUntil}`);
+      if (c.dryRun) console.log(`  Mode: DRY RUN (will stop before generation)`);
+
+      // Step 1: Scan sessions with project filter + date range
+      console.log(`\n  [1/11] Scanning sessions...`);
+      const sessions = await scanSessions({ projectPath: cwd, limit, since: nlSince, until: nlUntil });
+      if (sessions.length === 0) {
+        console.log("  No matching sessions found for this project.");
+        return;
+      }
+      console.log(`  Found ${sessions.length} session(s)`);
+
+      // Step 2: Parse all sessions into events
+      console.log(`  [2/11] Parsing sessions...`);
+      const allScoredEvents: Array<{ event: import("./parsers/types.ts").ParsedEvent; score: number }> = [];
+      for (const session of sessions) {
+        const parser = detectParser(session.filePath);
+        if (!parser) {
+          console.log(`    Skipping ${session.filePath} (no parser)`);
+          continue;
+        }
+        const source = await Bun.file(session.filePath).text();
+        for await (const event of parser.parse(source)) {
+          // Step 3: Score each event
+          const score = scoreEvent(event);
+          allScoredEvents.push({ event: { ...event, metadata: { ...event.metadata, importanceScore: score } }, score });
+        }
+      }
+      console.log(`  Parsed ${allScoredEvents.length} events`);
+
+      // Step 4: Build chunks
+      console.log(`  [3-4/11] Building chunks...`);
+      const scoredParsedEvents = allScoredEvents.map((e) => e.event);
+      let chunks = buildChunks(scoredParsedEvents, sessions[0].sessionId);
+      console.log(`  Built ${chunks.length} chunk(s)`);
+
+      // Step 4b: Keyword filtering (Phase 14 — NL filter)
+      if (nlKeywords && nlKeywords.length > 0) {
+        const beforeCount = chunks.length;
+        chunks = chunks.filter((chunk) => {
+          const content = chunk.events.map((e) => e.content).join(" ").toLowerCase();
+          return nlKeywords!.some((kw) => content.includes(kw));
+        });
+        console.log(`  Keyword filter: ${beforeCount} → ${chunks.length} chunks (keywords: ${nlKeywords.join(", ")})`);
+      }
+
+      if (chunks.length === 0) {
+        console.log("  No chunks to process.");
+        return;
+      }
+
+      // Step 5: Assess chunks with multi-agent consensus
+      console.log(`  [5/11] Assessing chunks with ${providers.join(", ")}...`);
+      const assessmentMap = await assessChunks(chunks, { providers }, (completed, total) => {
+        if (completed % 5 === 0 || completed === total) {
+          console.log(`    Progress: ${completed}/${total} chunks assessed`);
+        }
+      });
+
+      // Step 6: Compute consensus
+      console.log(`  [6/11] Computing consensus scores...`);
+      const consensusCfg = { minAssessments: Math.min(providers.length, 2) };
+      const scoredChunks = new Map<string, { chunk: typeof chunks[0]; consensus: number }>();
+      for (const chunk of chunks) {
+        const assessments = assessmentMap.get(chunk.id) || [];
+        const consensus = computeConsensus(assessments, consensusCfg);
+        scoredChunks.set(chunk.id, { chunk, consensus });
+      }
+
+      // Step 7: Persist chunks + FTS
+      console.log(`  [7/11] Persisting to SQLite + FTS...`);
+      const sessionDb = rawSm.getSessionDb();
+      let persistedCount = 0;
+      for (const [, { chunk, consensus }] of scoredChunks) {
+        try {
+          sessionDb.persistChunk(chunk, persistedCount, consensus);
+          const content = chunk.events.map((e) => e.content).join("\n");
+          sessionDb.persistChunkFTS(chunk.id, content);
+          persistedCount++;
+        } catch {
+          // Duplicate chunk IDs on re-run
+        }
+      }
+      console.log(`  Persisted ${persistedCount} chunk(s)`);
+
+      // Step 8: Distill with token budget
+      console.log(`  [8/11] Distilling (budget: ${budget.toLocaleString()} tokens)...`);
+      const distilled = distill(scoredChunks, { maxTokens: budget });
+      console.log(`  Selected ${distilled.chunks.length} of ${chunks.length} chunks (${distilled.totalTokens.toLocaleString()} tokens)`);
+      console.log(`  Dropped: ${distilled.droppedChunks} chunk(s)`);
+
+      // Dry-run stops here
+      if (c.dryRun) {
+        console.log(`\n✓ Dry run complete — pipeline verified`);
+        console.log(`  Sessions scanned: ${sessions.length}`);
+        console.log(`  Events parsed: ${allScoredEvents.length}`);
+        console.log(`  Chunks built: ${chunks.length}`);
+        console.log(`  Chunks selected: ${distilled.chunks.length}`);
+        console.log(`  Total tokens: ${distilled.totalTokens.toLocaleString()}`);
+        return;
+      }
+
+      // Step 9: Synthesize with narrative assembly
+      console.log(`  [9/11] Synthesizing narrative...`);
+      const groups = groupByTopic(distilled.chunks);
+      const synthesis = assembleSynthesis(groups);
+      console.log(`  Organized into ${synthesis.length} topic(s): ${synthesis.map((s) => s.topic).join(", ")}`);
+
+      // Step 10: Generate JSONL
+      console.log(`  [10/11] Generating ${format} JSONL...`);
+      const timestamp = new Date().toISOString().slice(0, 19).replace(/[T:]/g, "-");
+      const outputDir = c.output ? c.output : join(getDataDir(), "distilled");
+
+      // Ensure output directory exists
+      const { mkdirSync } = await import("node:fs");
+      try {
+        mkdirSync(outputDir, { recursive: true });
+      } catch {
+        // Directory may already exist
+      }
+
+      const outputPath = join(outputDir, `${timestamp}-build.jsonl`);
+
+      if (format === "conversation") {
+        // Use synthesized turns for conversation format
+        // Inject synthesis topics into distilled session for the generator
+        const synthesizedDistilled = {
+          ...distilled,
+          sourcePlatforms: [...new Set(sessions.map((s) => s.platform))],
+          sourceSessionIds: [...new Set(sessions.map((s) => s.sessionId))],
+        };
+        await conversationGenerator.generate(synthesizedDistilled, outputPath, {
+          cwd,
+          gitBranch: "",
+        });
+      } else {
+        // Summary format uses existing claudeGenerator
+        const generator = getGenerator("claude");
+        await generator.generate(distilled, outputPath);
+      }
+
+      // Step 10b: Store top chunks as ClaudeMem observations
+      try {
+        const topChunks = distilled.chunks.slice(0, 10);
+        let storedObs = 0;
+        for (const chunk of topChunks) {
+          const content = chunk.events.map((e) => e.content).join("\n").slice(0, 2000);
+          const ok = await rawMem.storeObservation({
+            contentSessionId: `distill-build-${timestamp}`,
+            cwd,
+            tool_name: "distill_build",
+            tool_input: { project: cwd, topic: "distilled-knowledge" },
+            tool_response: { chunkId: chunk.id, content },
+          });
+          if (ok) storedObs++;
+        }
+        if (storedObs > 0) console.log(`  Stored ${storedObs} observations in ClaudeMem`);
+      } catch {
+        // ClaudeMem may not be running — non-fatal
+      }
+
+      // Step 11: Report
+      console.log(`  [11/11] Writing output...`);
+      console.log(`\n✓ Build complete`);
+      console.log(`  Sessions: ${sessions.length}`);
+      console.log(`  Events: ${allScoredEvents.length}`);
+      console.log(`  Chunks: ${distilled.chunks.length} selected / ${chunks.length} total`);
+      console.log(`  Tokens: ${distilled.totalTokens.toLocaleString()}`);
+      console.log(`  Topics: ${synthesis.length}`);
+      console.log(`  Output: ${outputPath}`);
+      console.log(`\n  To use: :distill load ${outputPath}`);
+
     } else if (c.kind === "distill_ask") {
       // Item 109: Question-driven distillation via queryDistill()
       const platform = (c.platform || "claude") as OutputPlatform;
@@ -786,13 +1135,7 @@ export async function runRepl(options: RunReplOptions = {}): Promise<void> {
         console.log(`  Selected: ${result.chunks.length} chunks (${result.totalTokens.toLocaleString()} tokens) from ${result.searchStats.totalCandidates} candidates`);
         console.log(`  Output: ${outputFile}`);
 
-        if (platform === "claude") {
-          console.log(`\n  To use: claude --resume ${outputFile}`);
-        } else if (platform === "codex") {
-          console.log(`\n  To use: codex --session ${outputFile}`);
-        } else {
-          console.log(`\n  To use: gemini --session ${outputFile}`);
-        }
+        console.log(`\n  To use: :distill load ${outputFile}`);
       } catch (err) {
         const msg = err instanceof Error ? err.message : String(err);
         console.log(`Question-driven distillation failed: ${msg}`);
@@ -844,7 +1187,8 @@ export async function runRepl(options: RunReplOptions = {}): Promise<void> {
     const m = s?.activeModel || "default";
     const brainToken = brain.connected ? "|brain" : "";
     const watchToken = watcher.isRunning ? "|watch" : "";
-    rl.setPrompt(`[${s?.id || "no-session"}|${p}|${m}${brainToken}${watchToken}]> `);
+    const ctxToken = loadedConversation ? "|ctx" : "";
+    rl.setPrompt(`[${s?.id || "no-session"}|${p}|${m}${brainToken}${watchToken}${ctxToken}]> `);
     rl.prompt();
   };
 

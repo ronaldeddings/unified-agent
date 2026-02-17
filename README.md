@@ -165,6 +165,9 @@ bun run smoke:adapter:gemini
 - `:mem note <text>`
 - `:distill scan` (discover sessions across Claude, Codex, Gemini)
 - `:distill run [sessionId...] [--providers p1,p2]` (full distillation pipeline)
+- `:distill build [--cwd path] [--limit N] [--budget N] [--format conversation|summary] [--providers p1,p2] [--dry-run] [--filter "..."]` (project-scoped build: scan → assess → synthesize → generate JSONL)
+- `:distill preview [--cwd path] [--limit N]` (alias for `:distill build --dry-run`)
+- `:distill filter "natural language scope description" [--providers p1,p2]` (natural language filter → build pipeline)
 - `:distill seed claude|codex|gemini [sessionId]` (generate platform-native session file)
 - `:distill ask "question" [--platform claude|codex|gemini] [--providers p1,p2]` (question-driven distillation)
 - `:distill query <text>` (search chunk FTS index)
@@ -188,6 +191,56 @@ The distillation pipeline ingests session files from Claude Code, Codex CLI, and
 6. **Consensus** — computes weighted average with outlier rejection
 7. **Distill** — selects highest-value chunks within token budget (hybrid sort: 0.7 consensus + 0.3 recency)
 8. **Generate** — emits platform-native output (Claude JSONL, Codex JSONL, Gemini JSON)
+
+### Project-Scoped Build
+
+The `:distill build` command runs the full pipeline for a specific project directory, producing a Claude Code JSONL file that works with `claude --resume`:
+
+```bash
+# Build conversation JSONL for a project
+:distill build --cwd /path/to/project --limit 20
+
+# Preview stats without generating output
+:distill build --cwd /path/to/project --dry-run
+
+# Or use the preview alias
+:distill preview --cwd /path/to/project
+
+# Custom token budget and providers
+:distill build --cwd /path/to/project --budget 50000 --providers claude,codex
+
+# Use the generated file
+claude --resume ~/.unified-agent/distilled/2026-02-16-build.jsonl
+```
+
+The build pipeline:
+1. **Scan** — finds sessions matching the project directory (filters Claude sessions by `~/.claude/projects/` hash)
+2. **Parse + Score** — reads all events and assigns importance scores
+3. **Chunk** — groups events into assessment-ready windows
+4. **Assess** — multi-agent assessment with selected providers
+5. **Consensus** — weighted average with outlier rejection
+6. **Persist** — writes chunks + FTS index to SQLite
+7. **Distill** — selects top chunks within token budget
+8. **Synthesize** — groups by topic, deduplicates, resolves contradictions, orders narratively
+9. **Generate** — produces conversation-quality JSONL with natural user/assistant turns
+10. **Report** — writes output file and stores top chunks as ClaudeMem observations
+
+### Natural Language Filtering
+
+Instead of remembering flags, describe what you want in plain English:
+
+```bash
+# Natural language filter — extracts params via LLM, then runs build
+:distill filter "conversations last two weeks about railway for /path/to/project, most recent 20"
+
+# Or use --filter flag on build for the same effect
+:distill build --filter "HVM website sessions mentioning payload CMS from this month"
+
+# The system extracts: cwd, limit, since/until dates, keywords, providers
+# Then runs the full build pipeline with those parameters
+```
+
+The conversation format gives Claude "first-person ownership" of project knowledge — it reads the JSONL as a conversation it participated in, not a third-party summary.
 
 ### Real-Time Scoring
 

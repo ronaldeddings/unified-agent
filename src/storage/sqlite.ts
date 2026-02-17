@@ -3,6 +3,7 @@ import { Database } from "bun:sqlite";
 import { dirname } from "node:path";
 import { getSqlitePath } from "../util/paths";
 import type { CanonicalEvent, MetaSession, ProviderName } from "../session/types";
+import type { Chunk } from "../scoring/chunker.ts";
 import { runDistillMigrations } from "./distillMigrations.ts";
 
 export class SessionDb {
@@ -204,5 +205,81 @@ export class SessionDb {
       .query("SELECT raw_json FROM events WHERE meta_session_id = ? ORDER BY created_at_epoch DESC LIMIT ?")
       .all(metaSessionId, limit) as any[];
     return rows.map((r) => JSON.parse(r.raw_json));
+  }
+
+  /**
+   * Persist an assessed chunk to the chunks table.
+   * Maps Chunk fields to the chunks schema columns.
+   */
+  persistChunk(chunk: Chunk, chunkIndex: number, consensusScore: number): void {
+    this.db
+      .prepare(
+        `INSERT OR REPLACE INTO chunks (
+          id, meta_session_id, chunk_index, start_event_index, end_event_index,
+          importance_avg, consensus_score, token_count, summary
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
+      )
+      .run(
+        chunk.id,
+        chunk.sessionId,
+        chunkIndex,
+        chunk.startIndex,
+        chunk.endIndex,
+        chunk.importanceAvg,
+        consensusScore,
+        chunk.tokenEstimate,
+        chunk.events.map((e) => e.content).join("\n---\n")
+      );
+  }
+
+  /**
+   * Persist chunk content to the FTS5 full-text search index.
+   * Enables keyword search via `:distill ask`.
+   */
+  persistChunkFTS(chunkId: string, content: string): void {
+    this.db
+      .prepare("INSERT INTO chunk_fts (chunk_id, content) VALUES (?, ?)")
+      .run(chunkId, content);
+  }
+
+  /**
+   * Search the chunk_fts table for chunks matching a query.
+   * Returns chunk IDs and matching content snippets.
+   */
+  searchChunksFts(query: string, limit = 20): Array<{ chunkId: string; content: string; rank: number }> {
+    const rows = this.db
+      .query(
+        `SELECT chunk_id, content, rank
+         FROM chunk_fts
+         WHERE chunk_fts MATCH ?
+         ORDER BY rank
+         LIMIT ?`
+      )
+      .all(query, limit) as Array<{ chunk_id: string; content: string; rank: number }>;
+    return rows.map((r) => ({
+      chunkId: r.chunk_id,
+      content: r.content,
+      rank: r.rank,
+    }));
+  }
+
+  /**
+   * Retrieve a persisted chunk by ID from the chunks table.
+   */
+  getChunk(chunkId: string): { id: string; metaSessionId: string; consensusScore: number; tokenCount: number; summary: string } | null {
+    const row = this.db
+      .query(
+        `SELECT id, meta_session_id, consensus_score, token_count, summary
+         FROM chunks WHERE id = ?`
+      )
+      .get(chunkId) as any;
+    if (!row) return null;
+    return {
+      id: row.id,
+      metaSessionId: row.meta_session_id,
+      consensusScore: row.consensus_score,
+      tokenCount: row.token_count,
+      summary: row.summary,
+    };
   }
 }

@@ -224,4 +224,139 @@ describe("parseLine — :distill commands", () => {
     const r = parseLine(":distill");
     expect(r.command).toEqual({ kind: "help" });
   });
+
+  // 10.22: Tests for new --cwd, --limit, --budget, --output flags
+
+  test("parses :distill run with --cwd flag", () => {
+    const r = parseLine(":distill run --cwd /Volumes/VRAM/project");
+    expect(r.command?.kind).toBe("distill_run");
+    if (r.command?.kind === "distill_run") {
+      expect(r.command.cwd).toBe("/Volumes/VRAM/project");
+      expect(r.command.sessionIds).toBeUndefined();
+    }
+  });
+
+  test("parses :distill run with --limit flag", () => {
+    const r = parseLine(":distill run --limit 20");
+    expect(r.command?.kind).toBe("distill_run");
+    if (r.command?.kind === "distill_run") {
+      expect(r.command.limit).toBe(20);
+    }
+  });
+
+  test("parses :distill run with --budget flag", () => {
+    const r = parseLine(":distill run --budget 80000");
+    expect(r.command?.kind).toBe("distill_run");
+    if (r.command?.kind === "distill_run") {
+      expect(r.command.budget).toBe(80000);
+    }
+  });
+
+  test("parses :distill run with --output flag", () => {
+    const r = parseLine(":distill run --output /tmp/out.jsonl");
+    expect(r.command?.kind).toBe("distill_run");
+    if (r.command?.kind === "distill_run") {
+      expect(r.command.output).toBe("/tmp/out.jsonl");
+    }
+  });
+
+  test("parses :distill run with all flags combined", () => {
+    const r = parseLine(":distill run --cwd /path/to/proj --limit 10 --budget 50000 --output /tmp/out.jsonl --providers claude,codex");
+    expect(r.command?.kind).toBe("distill_run");
+    if (r.command?.kind === "distill_run") {
+      expect(r.command.cwd).toBe("/path/to/proj");
+      expect(r.command.limit).toBe(10);
+      expect(r.command.budget).toBe(50000);
+      expect(r.command.output).toBe("/tmp/out.jsonl");
+      expect(r.command.providers).toEqual(["claude", "codex"]);
+    }
+  });
+
+  test("parses :distill run with session IDs and flags", () => {
+    const r = parseLine(":distill run ms_abc --cwd /proj --limit 5");
+    expect(r.command?.kind).toBe("distill_run");
+    if (r.command?.kind === "distill_run") {
+      expect(r.command.sessionIds).toEqual(["ms_abc"]);
+      expect(r.command.cwd).toBe("/proj");
+      expect(r.command.limit).toBe(5);
+    }
+  });
+
+  test("parses :distill ask with --cwd and --limit flags", () => {
+    const r = parseLine(':distill ask "What patterns exist?" --cwd /proj --limit 15');
+    expect(r.command?.kind).toBe("distill_ask");
+    if (r.command?.kind === "distill_ask") {
+      expect(r.command.question).toBe("What patterns exist?");
+      expect(r.command.cwd).toBe("/proj");
+      expect(r.command.limit).toBe(15);
+    }
+  });
+
+  test("parses :distill ask with --budget flag", () => {
+    const r = parseLine(':distill ask "question" --budget 40000');
+    expect(r.command?.kind).toBe("distill_ask");
+    if (r.command?.kind === "distill_ask") {
+      expect(r.command.budget).toBe(40000);
+    }
+  });
+
+  test("ignores invalid --limit value", () => {
+    const r = parseLine(":distill run --limit abc");
+    expect(r.command?.kind).toBe("distill_run");
+    if (r.command?.kind === "distill_run") {
+      expect(r.command.limit).toBeUndefined();
+    }
+  });
+
+  // 13.1-13.2: distill build command parsing
+  test("parses :distill build with all flags", () => {
+    const r = parseLine(":distill build --cwd /my/project --limit 10 --budget 50000 --format conversation --providers claude,codex");
+    expect(r.command?.kind).toBe("distill_build");
+    if (r.command?.kind === "distill_build") {
+      expect(r.command.cwd).toBe("/my/project");
+      expect(r.command.limit).toBe(10);
+      expect(r.command.budget).toBe(50000);
+      expect(r.command.format).toBe("conversation");
+      expect(r.command.providers).toEqual(["claude", "codex"]);
+      expect(r.command.dryRun).toBeUndefined();
+    }
+  });
+
+  test("parses :distill build --dry-run", () => {
+    const r = parseLine(":distill build --cwd /test --dry-run");
+    expect(r.command?.kind).toBe("distill_build");
+    if (r.command?.kind === "distill_build") {
+      expect(r.command.cwd).toBe("/test");
+      expect(r.command.dryRun).toBe(true);
+    }
+  });
+
+  test("parses :distill build with no flags", () => {
+    const r = parseLine(":distill build");
+    expect(r.command?.kind).toBe("distill_build");
+    if (r.command?.kind === "distill_build") {
+      expect(r.command.cwd).toBeUndefined();
+      expect(r.command.limit).toBeUndefined();
+      expect(r.command.budget).toBeUndefined();
+    }
+  });
+
+  test("parses :d build (alias)", () => {
+    const r = parseLine(":d build --cwd /test");
+    expect(r.command?.kind).toBe("distill_build");
+    if (r.command?.kind === "distill_build") {
+      expect(r.command.cwd).toBe("/test");
+    }
+  });
+
+  // 13.16: distill preview as alias for build --dry-run
+  test("parses :distill preview as build --dry-run", () => {
+    const r = parseLine(":distill preview --cwd /test --limit 5");
+    expect(r.command?.kind).toBe("distill_build");
+    if (r.command?.kind === "distill_build") {
+      expect(r.command.dryRun).toBe(true);
+      expect(r.command.cwd).toBe("/test");
+      expect(r.command.limit).toBe(5);
+    }
+  });
 });

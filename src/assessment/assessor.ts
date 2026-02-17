@@ -45,7 +45,7 @@ function buildProviderArgs(provider: "claude" | "codex" | "gemini", prompt: stri
     case "codex":
       return {
         cmd: "codex",
-        args: ["exec", "--skip-git-repo-check", "--dangerously-bypass-approvals-and-sandbox", "-q", prompt],
+        args: ["exec", "--skip-git-repo-check", "--dangerously-bypass-approvals-and-sandbox", "--ephemeral", prompt],
       };
     case "gemini":
       return {
